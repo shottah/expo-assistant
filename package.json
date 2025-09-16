@@ -1,12 +1,14 @@
 {
   "name": "expo-assistant",
   "version": "0.1.0",
-  "description": "My new module",
+  "description": "Native voice assistant integration for Expo apps with Siri and Google Assistant support",
   "main": "build/index.js",
   "types": "build/index.d.ts",
+  "app.plugin": "./plugin/build/index.js",
   "scripts": {
-    "build": "expo-module build",
-    "clean": "expo-module clean",
+    "build:plugin": "tsc --project plugin/tsconfig.json",
+    "build": "expo-module build && npm run build:plugin",
+    "clean": "expo-module clean && rm -rf plugin/build",
     "lint": "expo-module lint",
     "test": "expo-module test",
     "test:jest": "jest",
@@ -22,7 +24,15 @@
     "react-native",
     "expo",
     "expo-assistant",
-    "ExpoAssistant"
+    "ExpoAssistant",
+    "siri",
+    "google-assistant",
+    "voice",
+    "voice-commands",
+    "sirikit",
+    "app-intents",
+    "app-actions",
+    "voice-assistant"
   ],
   "repository": "https://github.com/shottah/expo-assistant",
   "bugs": {
@@ -32,14 +42,22 @@
   "license": "MIT",
   "homepage": "https://github.com/shottah/expo-assistant#readme",
   "devDependencies": {
+    "@expo/config-plugins": "^9.0.0",
+    "@expo/config-types": "^52.0.0",
     "@testing-library/react-native": "^13.3.3",
     "@types/jest": "^30.0.0",
+    "@types/plist": "^3.0.5",
     "@types/react": "~19.1.0",
     "expo": "^54.0.7",
     "expo-module-scripts": "^5.0.7",
     "jest": "^29.7.0",
+    "plist": "^3.1.0",
     "react-native": "0.81.4",
-    "ts-jest": "^29.4.2"
+    "ts-jest": "^29.4.2",
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "@expo/config-plugins": "^9.0.0"
   },
   "peerDependencies": {
     "expo": "*",
