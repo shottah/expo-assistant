@@ -46,6 +46,7 @@
     "@expo/config-types": "^52.0.0",
     "@testing-library/react-native": "^13.3.3",
     "@types/jest": "^30.0.0",
+    "@types/node": "^24.5.0",
     "@types/plist": "^3.0.5",
     "@types/react": "~19.1.0",
     "expo": "^54.0.7",

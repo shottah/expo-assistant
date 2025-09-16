@@ -8,12 +8,11 @@ import {
   withInfoPlist,
   withEntitlementsPlist,
   withXcodeProject,
-  IOSConfig,
   ExportedConfigWithProps
 } from '@expo/config-plugins';
 import { ExpoAssistantPluginConfig, INTENT_TYPE_MAPPINGS } from './types';
-import * as path from 'path';
-import * as fs from 'fs';
+import path from 'path';
+import fs from 'fs';
 
 export const withIOSVoiceIntents: ConfigPlugin<ExpoAssistantPluginConfig> = (config, props) => {
   config = withInfoPlist(config, (config) => {
@@ -174,8 +173,9 @@ function createIntentExtension(
   const extensionName = 'IntentExtension';
 
   // Get Xcode project
-  const project = config.modResults;
-  const projectName = config.modRequest.projectName || 'MyApp';
+  // Note: These are used for Xcode project manipulation in full implementation
+  // const project = config.modResults;
+  // const projectName = config.modRequest.projectName || 'MyApp';
 
   // Create Intent Extension directory
   const extensionPath = path.join(projectRoot, 'ios', extensionName);

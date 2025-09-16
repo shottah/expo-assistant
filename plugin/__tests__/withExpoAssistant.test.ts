@@ -5,6 +5,17 @@
 import withExpoAssistant, { IntentCategory } from '../src/index';
 import { ExpoConfig } from '@expo/config-types';
 
+// Mock the config plugins to avoid file system operations in tests
+jest.mock('@expo/config-plugins', () => ({
+  ...jest.requireActual('@expo/config-plugins'),
+  withPlugins: jest.fn((config) => config),
+  withInfoPlist: jest.fn((config) => config),
+  withEntitlementsPlist: jest.fn((config) => config),
+  withXcodeProject: jest.fn((config) => config),
+  withAndroidManifest: jest.fn((config) => config),
+  withDangerousMod: jest.fn((config) => config)
+}));
+
 describe('withExpoAssistant', () => {
   let config: ExpoConfig;
 
@@ -24,7 +35,7 @@ describe('withExpoAssistant', () => {
 
   describe('Basic Configuration', () => {
     it('should apply default configuration', () => {
-      const result = withExpoAssistant(config);
+      const result = withExpoAssistant(config, {});
       expect(result).toBeDefined();
       expect(result.name).toBe('test-app');
     });
@@ -246,7 +257,8 @@ describe('withExpoAssistant', () => {
       });
 
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('[expo-assistant]')
+        '[expo-assistant] Plugin configuration:',
+        expect.any(String)
       );
 
       consoleSpy.mockRestore();
