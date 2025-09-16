@@ -11,8 +11,8 @@ Pod::Spec.new do |s|
   s.author         = package['author']
   s.homepage       = package['homepage']
   s.platforms      = {
-    :ios => '15.1',
-    :tvos => '15.1'
+    :ios => '15.0',
+    :tvos => '15.0'
   }
   s.swift_version  = '5.9'
   s.source         = { git: 'https://github.com/shottah/expo-assistant' }
@@ -26,4 +26,10 @@ Pod::Spec.new do |s|
   }
 
   s.source_files = "**/*.{h,m,mm,swift,hpp,cpp}"
+  s.exclude_files = "Tests/**/*.{h,m,mm,swift,hpp,cpp}"
+
+  s.test_spec 'Tests' do |test_spec|
+    test_spec.source_files = 'Tests/**/*.{h,m,mm,swift,hpp,cpp}'
+    test_spec.test_type = :unit
+  end
 end

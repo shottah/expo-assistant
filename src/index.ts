@@ -1,5 +1,5 @@
-// Reexport the native module. On web, it will be resolved to ExpoAssistantModule.web.ts
-// and on native platforms to ExpoAssistantModule.ts
-export { default } from './ExpoAssistantModule';
+export { VoiceAssistant } from './VoiceAssistant';
+export { VoiceIntentBuilder } from './builders/VoiceIntentBuilder';
+export * from './types/VoiceAssistant.types';
 export { default as ExpoAssistantView } from './ExpoAssistantView';
-export * from  './ExpoAssistant.types';
+export * from './ExpoAssistant.types';
