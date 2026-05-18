@@ -5,6 +5,20 @@
   "main": "build/index.js",
   "types": "build/index.d.ts",
   "app.plugin": "./plugin/build/index.js",
+  "files": [
+    "build",
+    "plugin/build",
+    "android",
+    "ios",
+    "expo-module.config.json",
+    "README.md",
+    "PLUGIN.md",
+    "CHANGELOG.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "build:plugin": "tsc --project plugin/tsconfig.json",
     "build": "expo-module build && npm run build:plugin",
