@@ -49,11 +49,6 @@ android {
 }
 
 dependencies {
-  // Production deps that the module's own source already imports.
-  // Without this, ExpoAssistantModule.kt fails to compile with
-  // `Unresolved reference 'google'` / `Unresolved reference 'NoteIntents'`.
-  implementation 'com.google.android.gms:play-services-actions:18.0.0'
-
   testImplementation 'junit:junit:4.13.2'
   testImplementation 'io.mockk:mockk:1.13.10'
   testImplementation 'org.robolectric:robolectric:4.12.2'

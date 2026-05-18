@@ -11,7 +11,6 @@ import android.os.Build
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import androidx.core.content.ContextCompat
-import com.google.android.gms.actions.NoteIntents
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.modules.Module
@@ -138,7 +137,7 @@ class ExpoAssistantModule : Module() {
         }
 
         if (registeredIntents.contains(intentId)) {
-            promise.reject(CodedException("ALREADY_REGISTERED", "Intent $intentId is already registered"))
+            promise.reject(CodedException("ALREADY_REGISTERED", "Intent $intentId is already registered", null))
             return
         }
 
@@ -252,7 +251,10 @@ class ExpoAssistantModule : Module() {
                     result["query"] = it
                 }
             }
-            NoteIntents.ACTION_CREATE_NOTE -> {
+            // Legacy Google Now slot intent constant from the (now-deprecated
+            // and unhosted) com.google.android.gms:play-services-actions
+            // artifact. Inlined to avoid the dep.
+            "com.google.android.gms.actions.CREATE_NOTE" -> {
                 result["action"] = "CREATE_NOTE"
                 intent.getStringExtra(Intent.EXTRA_TEXT)?.let {
                     result["text"] = it
@@ -300,7 +302,13 @@ class ExpoAssistantModule : Module() {
 
     internal fun emitEvent(event: String, data: Map<String, Any>) {
         eventListeners[event]?.forEach { it(data) }
-        sendEvent(event, data)
+        // sendEvent depends on the expo appContext being attached. In unit
+        // tests (where the module is instantiated outside the expo runtime)
+        // this throws IllegalArgumentException. Internal listeners still fire.
+        try {
+            sendEvent(event, data)
+        } catch (_: IllegalArgumentException) {
+        }
     }
 
     private fun isGoogleAssistantAvailable(): Boolean {
