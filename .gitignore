@@ -37,6 +37,7 @@ project.xcworkspace
 local.properties
 android.iml
 android/app/libs
+android/build
 android/keystores/debug.keystore
 
 # Cocoapods

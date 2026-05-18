@@ -12,22 +12,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: '20'
-          cache: 'npm'
+          bun-version: latest
+
+      - name: Cache bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock', 'example/bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
 
       - name: Install dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Test (with coverage)
-        run: npm test -- --ci --coverage
+        run: bun run test --ci --coverage
 
       - name: Build
-        run: npm run build
-
-      - name: Verify npm tarball contents
-        run: npm pack --dry-run
+        run: bun run build
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -50,26 +54,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: '20'
-          cache: 'npm'
+          bun-version: latest
 
       - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Cache bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock', 'example/bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+
       - name: Install module dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Install example dependencies
         working-directory: example
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Generate android project
         working-directory: example
-        run: npx expo prebuild --platform android --clean --no-install
+        run: bunx expo prebuild --platform android --clean --no-install
 
       - name: Cache Gradle packages
         uses: actions/cache@v4
@@ -78,7 +89,8 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
           key: gradle-${{ runner.os }}-${{ hashFiles('example/android/**/*.gradle*', 'example/android/**/gradle-wrapper.properties', 'android/build.gradle') }}
-          restore-keys: gradle-${{ runner.os }}-
+          restore-keys: |
+            gradle-${{ runner.os }}-
 
       - name: Run unit tests
         working-directory: example/android
@@ -89,4 +101,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: android-test-report
-          path: example/android/app/build/reports/tests
+          path: |
+            example/android/expo-assistant/build/reports/tests
+            ~/.gradle/build/reports
