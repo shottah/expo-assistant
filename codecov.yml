@@ -1,0 +1,27 @@
+# Codecov project config. Free tier for public repos.
+# Docs: https://docs.codecov.com/docs/codecovyml-reference
+
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+        informational: true
+    patch:
+      default:
+        target: 80%
+        threshold: 0%
+        informational: true
+
+comment:
+  layout: "reach, diff, flags, files"
+  behavior: default
+  require_changes: false
+
+flags:
+  js:
+    paths:
+      - src/
+      - plugin/src/
+    carryforward: true
