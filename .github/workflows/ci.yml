@@ -7,6 +7,7 @@ on:
 
 jobs:
   verify:
+    name: JS / TS / plugin
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,11 +20,73 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Test
-        run: npm test -- --ci
+      - name: Test (with coverage)
+        run: npm test -- --ci --coverage
 
       - name: Build
         run: npm run build
 
       - name: Verify npm tarball contents
         run: npm pack --dry-run
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage/lcov.info
+          flags: js
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-js
+          path: coverage
+
+  android-test:
+    name: Android (JUnit / MockK / Robolectric)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install module dependencies
+        run: npm ci
+
+      - name: Install example dependencies
+        working-directory: example
+        run: npm ci
+
+      - name: Generate android project
+        working-directory: example
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('example/android/**/*.gradle*', 'example/android/**/gradle-wrapper.properties', 'android/build.gradle') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Run unit tests
+        working-directory: example/android
+        run: ./gradlew :expo-assistant:testDebugUnitTest --stacktrace
+
+      - name: Upload test report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-test-report
+          path: example/android/app/build/reports/tests
