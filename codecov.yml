@@ -25,3 +25,7 @@ flags:
       - src/
       - plugin/src/
     carryforward: true
+  android:
+    paths:
+      - android/src/main/
+    carryforward: true

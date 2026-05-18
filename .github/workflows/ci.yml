@@ -95,9 +95,17 @@ jobs:
           restore-keys: |
             gradle-${{ runner.os }}-
 
-      - name: Run unit tests
+      - name: Run unit tests + JaCoCo report
         working-directory: example/android
-        run: ./gradlew :expo-assistant:testDebugUnitTest --stacktrace
+        run: ./gradlew :expo-assistant:jacocoTestReport --stacktrace
+
+      - name: Upload Android coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: example/android/expo-assistant/build/reports/jacoco/jacocoTestReport/jacocoTestReport.xml
+          flags: android
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Upload test report artifact
         if: always()
@@ -106,4 +114,4 @@ jobs:
           name: android-test-report
           path: |
             example/android/expo-assistant/build/reports/tests
-            ~/.gradle/build/reports
+            example/android/expo-assistant/build/reports/jacoco
