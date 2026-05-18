@@ -15,17 +15,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # npm is still required for `npm publish --provenance`; bun publish
+      # doesn't yet emit npm provenance attestations.
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Cache bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock', 'example/bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+
       - name: Install dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Build
-        run: npm run build
+        run: bun run build
 
       - name: Publish to npm with provenance
         run: npm publish --provenance --access public
