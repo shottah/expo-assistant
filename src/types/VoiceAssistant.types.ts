@@ -124,8 +124,14 @@ export interface PermissionManager {
   checkPermissionStatus(permission: string): Promise<PermissionStatus>;
 }
 
+/**
+ * Public lifecycle events that VoiceAssistant broadcasts to observers via
+ * `addEventListener`. Invocation events are NOT part of this union — voice
+ * triggers go directly to the registered intent handler (push model).
+ * See VoiceAssistant class docstring + AGENTS.md for the rationale.
+ */
 export interface VoiceEvent {
-  type: "onIntentInvoked" | "onIntentCompleted" | "onIntentFailed";
+  type: "onIntentCompleted" | "onIntentFailed";
   intentId: string;
   data?: any;
   error?: Error;

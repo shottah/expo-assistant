@@ -89,6 +89,16 @@ export class VoiceIntentBuilder<
     return newBuilder;
   }
 
+  /**
+   * Binds the action handler — the function the OS invokes when a voice
+   * trigger fires this intent. This is the sole invocation path
+   * (push model). Each intent has exactly one handler.
+   *
+   * To layer cross-cutting concerns (logging, metrics, permissions), wrap
+   * `handler` with a higher-order function before passing it in — there is
+   * no parallel observer bus for invocation events. See VoiceAssistant
+   * class docstring + AGENTS.md.
+   */
   withHandler<R>(
     handler: IntentHandler<TParams, R>
   ): VoiceIntentFinal<TParams, R> {

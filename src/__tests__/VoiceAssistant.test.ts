@@ -374,28 +374,25 @@ describe("VoiceAssistant", () => {
       eventHandler = jest.fn();
     });
 
-    it("should add and trigger event listeners", async () => {
-      const intent = VoiceIntentBuilder.create()
-        .withId("event-intent")
-        .withCategory(IntentCategory.CUSTOM)
-        .withHandler({ handle: async () => ({}) })
-        .build();
+    it("should add and trigger event listeners for lifecycle events", async () => {
+      // Observer bus is for completion/failure lifecycle events, not
+      // invocation (invocation is push-only — see VoiceAssistant docstring).
+      voiceAssistant.addEventListener("onIntentCompleted", eventHandler);
 
-      await voiceAssistant.registerIntent(intent);
-
-      voiceAssistant.addEventListener("onIntentInvoked", eventHandler);
-
-      const receivedHandler = mockModule.addListener.mock.calls.find(
-        (call) => call[0] === "onIntentInvoked"
+      const completedHandler = mockModule.addListener.mock.calls.find(
+        (call) => call[0] === "onIntentCompleted"
       )?.[1];
 
-      receivedHandler?.({ intentId: "event-intent", data: { test: "data" } });
+      completedHandler?.({
+        intentId: "event-intent",
+        data: { result: "ok" },
+      });
 
       expect(eventHandler).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: "onIntentInvoked",
+          type: "onIntentCompleted",
           intentId: "event-intent",
-          data: { test: "data" },
+          data: { result: "ok" },
           timestamp: expect.any(Date),
         })
       );
@@ -449,9 +446,8 @@ describe("VoiceAssistant", () => {
       voiceAssistant = await VoiceAssistant.initialize();
     });
 
-    it("routes onIntentInvoked events to the registered handler AND fans out to observers", async () => {
+    it("routes onIntentInvoked events to the registered handler — push model, no observer fan-out", async () => {
       const handlerMock = jest.fn().mockResolvedValue({ ok: true });
-      const observer = jest.fn();
       const intent = VoiceIntentBuilder.create<{ query: string }>()
         .withId("search")
         .withCategory(IntentCategory.SEARCH)
@@ -460,7 +456,6 @@ describe("VoiceAssistant", () => {
         .build();
 
       await voiceAssistant.registerIntent(intent);
-      voiceAssistant.addEventListener("onIntentInvoked", observer);
 
       const invokedListener = mockModule.addListener.mock.calls.find(
         (call) => call[0] === "onIntentInvoked"
@@ -482,16 +477,38 @@ describe("VoiceAssistant", () => {
           timestamp: expect.any(Date),
         })
       );
+    });
 
-      // Observer received the broadcast on the same event.
-      expect(observer).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: "onIntentInvoked",
-          intentId: "search",
-          data: { query: "tacos" },
-          timestamp: expect.any(Date),
-        })
+    it("does not fan out invocation events to observers — push-only design", async () => {
+      const handlerMock = jest.fn().mockResolvedValue({ ok: true });
+      const observer = jest.fn();
+      const intent = VoiceIntentBuilder.create<{ query: string }>()
+        .withId("search-noobs")
+        .withCategory(IntentCategory.SEARCH)
+        .requiredParameter("query", { type: ParameterType.STRING })
+        .withHandler({ handle: handlerMock })
+        .build();
+
+      await voiceAssistant.registerIntent(intent);
+      // Subscribing with the legacy event name is intentionally a no-op —
+      // invocation is push-only. VoiceEvent.type doesn't include
+      // "onIntentInvoked"; the cast here mimics a stale call site.
+      voiceAssistant.addEventListener(
+        "onIntentInvoked" as any,
+        observer
       );
+
+      const invokedListener = mockModule.addListener.mock.calls.find(
+        (call) => call[0] === "onIntentInvoked"
+      )?.[1];
+      invokedListener!({
+        intentId: "search-noobs",
+        parameters: { query: "tacos" },
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(handlerMock).toHaveBeenCalled();
+      expect(observer).not.toHaveBeenCalled();
     });
 
     it("silently drops onIntentInvoked for unknown intentId", async () => {

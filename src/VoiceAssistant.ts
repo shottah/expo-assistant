@@ -10,6 +10,47 @@ import {
   IntentResponse,
 } from "./types/VoiceAssistant.types";
 
+/**
+ * VoiceAssistant — singleton orchestrator for voice-intent registration,
+ * donation, and invocation across iOS and Android.
+ *
+ * ## Push-only invocation model
+ *
+ * When the OS fires a registered intent (Siri voice command, Google
+ * Assistant App Action, App Shortcut tap), the JS layer routes the
+ * invocation directly to the user's registered intent handler — the
+ * `handler.handle()` function declared via `VoiceIntentBuilder.withHandler`.
+ * There is exactly one handler per intent.
+ *
+ * Invocation events do NOT fan out through the observer bus
+ * (`addEventListener`). The two reasons:
+ *
+ * 1. Native platforms are inherently push — iOS `AppIntent.perform()` and
+ *    Android intent-filter routing both deliver each invocation to exactly
+ *    one component. A subscription model would invent semantics neither
+ *    platform supports.
+ * 2. Two consumer paths for the same event creates ambiguity — "is the
+ *    handler authoritative or are observers?" — that no code can answer.
+ *
+ * Apps that want cross-cutting concerns (logging, analytics, metrics)
+ * around invocations should wrap handlers with middleware (higher-order
+ * functions on `IntentHandler`), not subscribe via a parallel bus.
+ *
+ * ## Observer bus (addEventListener)
+ *
+ * The observer bus IS appropriate for **system / lifecycle events** that
+ * don't have a natural handler home:
+ *
+ * - `onIntentCompleted` — fired after a handler returns successfully
+ * - `onIntentFailed` — fired after a handler throws / rejects
+ *
+ * These are JS-broadcast notifications, useful for decoupled UI updates,
+ * analytics, and audits. Apps subscribe via
+ * `voiceAssistant.addEventListener("onIntentCompleted", cb)`.
+ *
+ * See AGENTS.md at the repo root for the broader architecture notes and
+ * the register/donate/invoke matrix.
+ */
 export class VoiceAssistant {
   private static instance: VoiceAssistant | null = null;
   private config: VoiceAssistantConfig = {};
@@ -45,13 +86,17 @@ export class VoiceAssistant {
   }
 
   private setupEventListeners(): void {
-    // Voice-triggered invocation from Siri / Google Assistant.
-    // handleIntentInvoked fans out to observers AND runs the registered
-    // intent handler via executeIntent — single channel, both behaviors.
+    // Voice-triggered invocation from Siri / Google Assistant routes
+    // directly to the registered intent handler — push model. See class
+    // docstring for why invocation does NOT fan out through the observer
+    // bus.
     ExpoAssistantModule.addListener(
       "onIntentInvoked",
       this.handleIntentInvoked.bind(this)
     );
+    // Completed / Failed are lifecycle status events for the observer bus.
+    // Apps subscribe via addEventListener; these may be JS-fired after a
+    // handler returns or rejects.
     ExpoAssistantModule.addListener(
       "onIntentCompleted",
       this.handleIntentCompleted.bind(this)
@@ -62,6 +107,13 @@ export class VoiceAssistant {
     );
   }
 
+  /**
+   * Push-only invocation handler. Looks up the registered intent and
+   * dispatches to its handler.handle() via executeIntent (which wraps
+   * the resolver / handle / onError flow). Does NOT broadcast to
+   * observers — invocation events are not part of the public
+   * addEventListener surface. See VoiceEvent in types.
+   */
   private handleIntentInvoked(event: {
     intentId: string;
     parameters?: Record<string, unknown>;
@@ -79,15 +131,10 @@ export class VoiceAssistant {
     // (new path) or `data` (legacy payload shape). Accept both.
     const params = event.parameters ?? (event.data as Record<string, unknown> | undefined) ?? {};
 
-    // Fan out: notify observers registered via addEventListener.
-    this.emitEvent({
-      type: "onIntentInvoked",
-      intentId: event.intentId,
-      data: params,
-      timestamp: new Date(),
-    });
-
-    // Execute: run the user's registered handler (resolver → handle → onError).
+    // Run the user's registered handler. Errors are surfaced via the
+    // handler's own onError if defined, else logged. Note: observers
+    // wanting to react to completion / failure subscribe to the
+    // onIntentCompleted / onIntentFailed events, not to invocation.
     void this.executeIntent(event.intentId, params).catch((err) => {
       console.error(
         `expo-assistant: handler for ${event.intentId} threw during invocation`,
