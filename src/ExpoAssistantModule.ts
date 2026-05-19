@@ -1,10 +1,11 @@
-import { NativeModule, requireNativeModule } from 'expo';
+import { NativeModule, requireNativeModule } from "expo";
+
 import {
   VoiceAssistantConfig,
   PlatformCapabilities,
   PermissionStatus,
-  VoiceParameter
-} from './types/VoiceAssistant.types';
+  VoiceParameter,
+} from "./types/VoiceAssistant.types";
 
 export interface ExpoAssistantModuleEvents {
   onIntentReceived: (event: { intentId: string; data: any }) => void;
@@ -24,7 +25,10 @@ declare class ExpoAssistantModule extends NativeModule<ExpoAssistantModuleEvents
   initialize(config: VoiceAssistantConfig): Promise<void>;
   registerIntent(config: IntentConfig): Promise<void>;
   unregisterIntent(intentId: string): Promise<void>;
-  donateIntent(intentId: string, parameters: Record<string, any>): Promise<void>;
+  donateIntent(
+    intentId: string,
+    parameters: Record<string, any>
+  ): Promise<void>;
   requestMicrophonePermission(): Promise<PermissionStatus>;
   requestSpeechRecognitionPermission(): Promise<PermissionStatus>;
   checkCapabilities(): Promise<PlatformCapabilities>;
@@ -32,10 +36,10 @@ declare class ExpoAssistantModule extends NativeModule<ExpoAssistantModuleEvents
   enableAppActions(): Promise<void>;
   enableBackgroundProcessing(): Promise<void>;
   enableCustomUI(): Promise<void>;
-  getPlatform(): Promise<'ios' | 'android' | 'web'>;
+  getPlatform(): Promise<"ios" | "android" | "web">;
   getLocale(): Promise<string>;
   setDebugMode(enabled: boolean): Promise<void>;
 }
 
 // This call loads the native module object from the JSI.
-export default requireNativeModule<ExpoAssistantModule>('ExpoAssistant');
+export default requireNativeModule<ExpoAssistantModule>("ExpoAssistant");

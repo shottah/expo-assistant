@@ -1,30 +1,30 @@
 export enum IntentCategory {
-  SEARCH = 'search',
-  MEDIA = 'media',
-  PRODUCTIVITY = 'productivity',
-  HEALTH = 'health',
-  COMMUNICATION = 'communication',
-  TRAVEL = 'travel',
-  FINANCE = 'finance',
-  COMMERCE = 'commerce',
-  CUSTOM = 'custom'
+  SEARCH = "search",
+  MEDIA = "media",
+  PRODUCTIVITY = "productivity",
+  HEALTH = "health",
+  COMMUNICATION = "communication",
+  TRAVEL = "travel",
+  FINANCE = "finance",
+  COMMERCE = "commerce",
+  CUSTOM = "custom",
 }
 
 export enum ParameterType {
-  STRING = 'string',
-  NUMBER = 'number',
-  BOOLEAN = 'boolean',
-  ENUM = 'enum',
-  DATE = 'date',
-  OBJECT = 'object',
-  ARRAY = 'array'
+  STRING = "string",
+  NUMBER = "number",
+  BOOLEAN = "boolean",
+  ENUM = "enum",
+  DATE = "date",
+  OBJECT = "object",
+  ARRAY = "array",
 }
 
 export enum PermissionStatus {
-  GRANTED = 'granted',
-  DENIED = 'denied',
-  UNDETERMINED = 'undetermined',
-  UNAVAILABLE = 'unavailable'
+  GRANTED = "granted",
+  DENIED = "denied",
+  UNDETERMINED = "undetermined",
+  UNAVAILABLE = "unavailable",
 }
 
 export interface VoiceParameter {
@@ -45,20 +45,25 @@ export interface AndroidParameter {
 }
 
 export interface IntentHandler<TParams, TResponse> {
-  resolve?: (params: Partial<TParams>) => Promise<TParams | { needsValue: string }>;
+  resolve?: (
+    params: Partial<TParams>
+  ) => Promise<TParams | { needsValue: string }>;
   handle: (params: TParams, context: IntentContext) => Promise<TResponse>;
   onError?: (error: Error) => Promise<TResponse>;
 }
 
 export interface IntentContext {
-  platform: 'ios' | 'android' | 'web';
+  platform: "ios" | "android" | "web";
   locale: string;
   userId?: string;
   sessionId: string;
   timestamp: Date;
 }
 
-export interface VoiceIntent<TParams = Record<string, unknown>, TResponse = unknown> {
+export interface VoiceIntent<
+  TParams = Record<string, unknown>,
+  TResponse = unknown
+> {
   readonly id: string;
   readonly category: IntentCategory;
   readonly parameters: VoiceParameter[];
@@ -74,7 +79,7 @@ export interface VoiceIntent<TParams = Record<string, unknown>, TResponse = unkn
       biiCategory?: string;
       capability: string;
       parameters: AndroidParameter[];
-      fulfillment?: 'INLINE' | 'DEFERRED';
+      fulfillment?: "INLINE" | "DEFERRED";
     };
   };
 }
@@ -120,7 +125,7 @@ export interface PermissionManager {
 }
 
 export interface VoiceEvent {
-  type: 'onIntentReceived' | 'onIntentCompleted' | 'onIntentFailed';
+  type: "onIntentReceived" | "onIntentCompleted" | "onIntentFailed";
   intentId: string;
   data?: any;
   error?: Error;
@@ -135,7 +140,7 @@ export interface SearchFilters {
     to?: Date;
   };
   categories?: string[];
-  sortBy?: 'relevance' | 'date' | 'name';
+  sortBy?: "relevance" | "date" | "name";
   limit?: number;
 }
 

@@ -8,13 +8,17 @@ import {
   withInfoPlist,
   withEntitlementsPlist,
   withXcodeProject,
-  ExportedConfigWithProps
-} from '@expo/config-plugins';
-import { ExpoAssistantPluginConfig, INTENT_TYPE_MAPPINGS } from './types';
-import path from 'path';
-import fs from 'fs';
+  ExportedConfigWithProps,
+} from "@expo/config-plugins";
+import fs from "fs";
+import path from "path";
 
-export const withIOSVoiceIntents: ConfigPlugin<ExpoAssistantPluginConfig> = (config, props) => {
+import { ExpoAssistantPluginConfig, INTENT_TYPE_MAPPINGS } from "./types";
+
+export const withIOSVoiceIntents: ConfigPlugin<ExpoAssistantPluginConfig> = (
+  config,
+  props
+) => {
   config = withInfoPlist(config, (config) => {
     return setInfoPlist(config, props);
   });
@@ -23,7 +27,10 @@ export const withIOSVoiceIntents: ConfigPlugin<ExpoAssistantPluginConfig> = (con
     return setEntitlements(config, props);
   });
 
-  if (props.ios?.intentExtensionBundleId || props.intents?.includes('custom' as any)) {
+  if (
+    props.ios?.intentExtensionBundleId ||
+    props.intents?.includes("custom" as any)
+  ) {
     config = withXcodeProject(config, (config) => {
       return createIntentExtension(config, props);
     });
@@ -40,33 +47,39 @@ function setInfoPlist(
 
   // Add usage descriptions
   config.modResults.NSMicrophoneUsageDescription =
-    'This app needs microphone access for voice commands';
+    "This app needs microphone access for voice commands";
 
   config.modResults.NSSpeechRecognitionUsageDescription =
-    'This app uses speech recognition for voice commands';
+    "This app uses speech recognition for voice commands";
 
   config.modResults.NSSiriUsageDescription =
-    ios.siriUsageDescription || 'This app uses Siri for voice assistant features';
+    ios.siriUsageDescription ||
+    "This app uses Siri for voice assistant features";
 
   // Add alternative app names for better recognition
   if (ios.alternativeAppNames && ios.alternativeAppNames.length > 0) {
-    config.modResults.CFBundleSpokenName = config.modResults.CFBundleDisplayName || config.modResults.CFBundleName;
+    config.modResults.CFBundleSpokenName =
+      config.modResults.CFBundleDisplayName || config.modResults.CFBundleName;
 
-    config.modResults.INAlternativeAppNames = ios.alternativeAppNames.map(name => ({
-      INAlternativeAppName: name
-    }));
+    config.modResults.INAlternativeAppNames = ios.alternativeAppNames.map(
+      (name) => ({
+        INAlternativeAppName: name,
+      })
+    );
   }
 
   // Add supported user activity types
   const activityTypes: string[] = [];
 
   // Add default activity types
-  activityTypes.push(`${config.ios?.bundleIdentifier || 'com.yourapp'}.search`);
-  activityTypes.push(`${config.ios?.bundleIdentifier || 'com.yourapp'}.playMedia`);
+  activityTypes.push(`${config.ios?.bundleIdentifier || "com.yourapp"}.search`);
+  activityTypes.push(
+    `${config.ios?.bundleIdentifier || "com.yourapp"}.playMedia`
+  );
 
   // Add intent-specific activity types
   if (props.intents) {
-    props.intents.forEach(category => {
+    props.intents.forEach((category) => {
       const intentTypes = INTENT_TYPE_MAPPINGS.ios[category];
       if (intentTypes) {
         activityTypes.push(...intentTypes);
@@ -83,12 +96,13 @@ function setInfoPlist(
 
   // Add background modes if enabled
   if (props.enableBackgroundExecution) {
-    const backgroundModes = (config.modResults.UIBackgroundModes as string[]) || [];
-    if (!backgroundModes.includes('audio')) {
-      backgroundModes.push('audio');
+    const backgroundModes =
+      (config.modResults.UIBackgroundModes as string[]) || [];
+    if (!backgroundModes.includes("audio")) {
+      backgroundModes.push("audio");
     }
-    if (!backgroundModes.includes('processing')) {
-      backgroundModes.push('processing');
+    if (!backgroundModes.includes("processing")) {
+      backgroundModes.push("processing");
     }
     config.modResults.UIBackgroundModes = backgroundModes;
   }
@@ -96,16 +110,16 @@ function setInfoPlist(
   // Add HealthKit usage description if enabled
   if (props.enableHealthKit) {
     config.modResults.NSHealthShareUsageDescription =
-      'This app uses HealthKit data for voice-controlled workouts';
+      "This app uses HealthKit data for voice-controlled workouts";
     config.modResults.NSHealthUpdateUsageDescription =
-      'This app updates HealthKit data based on your voice commands';
+      "This app updates HealthKit data based on your voice commands";
   }
 
   // Add media session keys if enabled
   if (props.enableMediaSession) {
     const modes = (config.modResults.UIBackgroundModes as string[]) || [];
-    if (!modes.includes('audio')) {
-      modes.push('audio');
+    if (!modes.includes("audio")) {
+      modes.push("audio");
     }
     config.modResults.UIBackgroundModes = modes;
   }
@@ -116,7 +130,7 @@ function setInfoPlist(
   }
 
   if (props.debugMode) {
-    console.log('[expo-assistant] iOS Info.plist configured');
+    console.log("[expo-assistant] iOS Info.plist configured");
   }
 
   return config;
@@ -130,33 +144,34 @@ function setEntitlements(
 
   // Add SiriKit entitlement
   if (props.enableSiriKit !== false) {
-    config.modResults['com.apple.developer.siri'] = true;
+    config.modResults["com.apple.developer.siri"] = true;
   }
 
   // Add App Groups for data sharing with extensions
   if (ios.appGroups && ios.appGroups.length > 0) {
-    config.modResults['com.apple.security.application-groups'] = ios.appGroups;
+    config.modResults["com.apple.security.application-groups"] = ios.appGroups;
   } else if (ios.intentExtensionBundleId) {
     // Create default app group if intent extension is enabled
-    const bundleId = config.ios?.bundleIdentifier || 'com.yourapp';
-    config.modResults['com.apple.security.application-groups'] = [
-      `group.${bundleId}.voiceassistant`
+    const bundleId = config.ios?.bundleIdentifier || "com.yourapp";
+    config.modResults["com.apple.security.application-groups"] = [
+      `group.${bundleId}.voiceassistant`,
     ];
   }
 
   // Add HealthKit entitlement if enabled
   if (props.enableHealthKit) {
-    config.modResults['com.apple.developer.healthkit'] = true;
-    config.modResults['com.apple.developer.healthkit.background-delivery'] = true;
+    config.modResults["com.apple.developer.healthkit"] = true;
+    config.modResults["com.apple.developer.healthkit.background-delivery"] =
+      true;
   }
 
   // Add Media Session entitlement if enabled
   if (props.enableMediaSession) {
-    config.modResults['com.apple.developer.playable-content'] = true;
+    config.modResults["com.apple.developer.playable-content"] = true;
   }
 
   if (props.debugMode) {
-    console.log('[expo-assistant] iOS entitlements configured');
+    console.log("[expo-assistant] iOS entitlements configured");
   }
 
   return config;
@@ -168,9 +183,10 @@ function createIntentExtension(
 ): ExportedConfigWithProps {
   const { ios = {} } = props;
   const projectRoot = config.modRequest.projectRoot;
-  const bundleId = config.ios?.bundleIdentifier || 'com.yourapp';
-  const extensionBundleId = ios.intentExtensionBundleId || `${bundleId}.IntentExtension`;
-  const extensionName = 'IntentExtension';
+  const bundleId = config.ios?.bundleIdentifier || "com.yourapp";
+  const extensionBundleId =
+    ios.intentExtensionBundleId || `${bundleId}.IntentExtension`;
+  const extensionName = "IntentExtension";
 
   // Get Xcode project
   // Note: These are used for Xcode project manipulation in full implementation
@@ -178,33 +194,33 @@ function createIntentExtension(
   // const projectName = config.modRequest.projectName || 'MyApp';
 
   // Create Intent Extension directory
-  const extensionPath = path.join(projectRoot, 'ios', extensionName);
+  const extensionPath = path.join(projectRoot, "ios", extensionName);
   if (!fs.existsSync(extensionPath)) {
     fs.mkdirSync(extensionPath, { recursive: true });
   }
 
   // Create Info.plist for Intent Extension
   const extensionInfoPlist = {
-    CFBundleDevelopmentRegion: '$(DEVELOPMENT_LANGUAGE)',
+    CFBundleDevelopmentRegion: "$(DEVELOPMENT_LANGUAGE)",
     CFBundleDisplayName: extensionName,
-    CFBundleExecutable: '$(EXECUTABLE_NAME)',
+    CFBundleExecutable: "$(EXECUTABLE_NAME)",
     CFBundleIdentifier: extensionBundleId,
-    CFBundleInfoDictionaryVersion: '6.0',
-    CFBundleName: '$(PRODUCT_NAME)',
-    CFBundlePackageType: '$(PRODUCT_BUNDLE_PACKAGE_TYPE)',
-    CFBundleShortVersionString: '$(MARKETING_VERSION)',
-    CFBundleVersion: '$(CURRENT_PROJECT_VERSION)',
+    CFBundleInfoDictionaryVersion: "6.0",
+    CFBundleName: "$(PRODUCT_NAME)",
+    CFBundlePackageType: "$(PRODUCT_BUNDLE_PACKAGE_TYPE)",
+    CFBundleShortVersionString: "$(MARKETING_VERSION)",
+    CFBundleVersion: "$(CURRENT_PROJECT_VERSION)",
     NSExtension: {
-      NSExtensionPointIdentifier: 'com.apple.intents-service',
+      NSExtensionPointIdentifier: "com.apple.intents-service",
       NSExtensionPrincipalClass: `$(PRODUCT_MODULE_NAME).IntentHandler`,
       IntentsSupported: getIntentsSupported(props),
-      IntentsRestrictedWhileLocked: getRestrictedIntents(props)
-    }
+      IntentsRestrictedWhileLocked: getRestrictedIntents(props),
+    },
   };
 
   fs.writeFileSync(
-    path.join(extensionPath, 'Info.plist'),
-    require('plist').build(extensionInfoPlist)
+    path.join(extensionPath, "Info.plist"),
+    require("plist").build(extensionInfoPlist)
   );
 
   // Create IntentHandler.swift
@@ -219,12 +235,20 @@ class IntentHandler: INExtension {
             return SearchIntentHandler()
         case is INPlayMediaIntent:
             return PlayMediaIntentHandler()
-        ${props.intents?.includes('productivity' as any) ? `
+        ${
+          props.intents?.includes("productivity" as any)
+            ? `
         case is INCreateTaskIntent:
-            return CreateTaskIntentHandler()` : ''}
-        ${props.intents?.includes('health' as any) ? `
+            return CreateTaskIntentHandler()`
+            : ""
+        }
+        ${
+          props.intents?.includes("health" as any)
+            ? `
         case is INStartWorkoutIntent:
-            return StartWorkoutIntentHandler()` : ''}
+            return StartWorkoutIntentHandler()`
+            : ""
+        }
         default:
             return self
         }
@@ -245,24 +269,32 @@ class PlayMediaIntentHandler: NSObject, INPlayMediaIntentHandling {
         completion(response)
     }
 }
-${props.intents?.includes('productivity' as any) ? `
+${
+  props.intents?.includes("productivity" as any)
+    ? `
 class CreateTaskIntentHandler: NSObject, INCreateTaskIntentHandling {
     func handle(intent: INCreateTaskIntent, completion: @escaping (INCreateTaskIntentResponse) -> Void) {
         let response = INCreateTaskIntentResponse(code: .success, userActivity: nil)
         completion(response)
     }
-}` : ''}
-${props.intents?.includes('health' as any) ? `
+}`
+    : ""
+}
+${
+  props.intents?.includes("health" as any)
+    ? `
 class StartWorkoutIntentHandler: NSObject, INStartWorkoutIntentHandling {
     func handle(intent: INStartWorkoutIntent, completion: @escaping (INStartWorkoutIntentResponse) -> Void) {
         let response = INStartWorkoutIntentResponse(code: .success, userActivity: nil)
         completion(response)
     }
-}` : ''}
+}`
+    : ""
+}
 `;
 
   fs.writeFileSync(
-    path.join(extensionPath, 'IntentHandler.swift'),
+    path.join(extensionPath, "IntentHandler.swift"),
     intentHandlerSwift
   );
 
@@ -271,8 +303,12 @@ class StartWorkoutIntentHandler: NSObject, INStartWorkoutIntentHandling {
   // libraries like xcode or react-native-community/cli-platform-ios
 
   if (props.debugMode) {
-    console.log(`[expo-assistant] Intent Extension created at ${extensionPath}`);
-    console.log('[expo-assistant] Note: You may need to manually add the extension to your Xcode project');
+    console.log(
+      `[expo-assistant] Intent Extension created at ${extensionPath}`
+    );
+    console.log(
+      "[expo-assistant] Note: You may need to manually add the extension to your Xcode project"
+    );
   }
 
   return config;
@@ -282,7 +318,7 @@ function getIntentsSupported(props: ExpoAssistantPluginConfig): string[] {
   const intents: string[] = [];
 
   if (props.intents) {
-    props.intents.forEach(category => {
+    props.intents.forEach((category) => {
       const mappedIntents = INTENT_TYPE_MAPPINGS.ios[category];
       if (mappedIntents) {
         intents.push(...mappedIntents);
@@ -304,9 +340,9 @@ function getRestrictedIntents(props: ExpoAssistantPluginConfig): string[] {
 
   if (props.ios?.requiresUnlock !== false) {
     // Add sensitive intents that should require unlock
-    restricted.push('INSendPaymentIntent');
-    restricted.push('INRequestPaymentIntent');
-    restricted.push('INTransferMoneyIntent');
+    restricted.push("INSendPaymentIntent");
+    restricted.push("INRequestPaymentIntent");
+    restricted.push("INTransferMoneyIntent");
   }
 
   return restricted;

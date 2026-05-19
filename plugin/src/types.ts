@@ -3,15 +3,15 @@
  */
 
 export enum IntentCategory {
-  SEARCH = 'search',
-  MEDIA = 'media',
-  PRODUCTIVITY = 'productivity',
-  HEALTH = 'health',
-  COMMUNICATION = 'communication',
-  TRAVEL = 'travel',
-  FINANCE = 'finance',
-  COMMERCE = 'commerce',
-  CUSTOM = 'custom'
+  SEARCH = "search",
+  MEDIA = "media",
+  PRODUCTIVITY = "productivity",
+  HEALTH = "health",
+  COMMUNICATION = "communication",
+  TRAVEL = "travel",
+  FINANCE = "finance",
+  COMMERCE = "commerce",
+  CUSTOM = "custom",
 }
 
 export interface ExpoAssistantPluginConfig {
@@ -47,10 +47,10 @@ export interface ExpoAssistantPluginConfig {
     voiceInteractionService?: boolean;
     slicesEnabled?: boolean;
     customVocabulary?: {
-      terms: Array<{
+      terms: {
         value: string;
         synonyms: string[];
-      }>;
+      }[];
     };
     biiCategories?: string[];
     capabilities?: string[];
@@ -67,81 +67,81 @@ export const INTENT_TYPE_MAPPINGS: {
 } = {
   ios: {
     [IntentCategory.SEARCH]: [
-      'INSearchIntent',
-      'INSearchForMessagesIntent',
-      'INSearchForNotesIntent'
+      "INSearchIntent",
+      "INSearchForMessagesIntent",
+      "INSearchForNotesIntent",
     ],
     [IntentCategory.MEDIA]: [
-      'INPlayMediaIntent',
-      'INPauseMediaIntent',
-      'INSearchForMediaIntent'
+      "INPlayMediaIntent",
+      "INPauseMediaIntent",
+      "INSearchForMediaIntent",
     ],
     [IntentCategory.PRODUCTIVITY]: [
-      'INCreateTaskIntent',
-      'INCreateNoteIntent',
-      'INAddTasksIntent'
+      "INCreateTaskIntent",
+      "INCreateNoteIntent",
+      "INAddTasksIntent",
     ],
     [IntentCategory.HEALTH]: [
-      'INStartWorkoutIntent',
-      'INEndWorkoutIntent',
-      'INPauseWorkoutIntent'
+      "INStartWorkoutIntent",
+      "INEndWorkoutIntent",
+      "INPauseWorkoutIntent",
     ],
     [IntentCategory.COMMUNICATION]: [
-      'INSendMessageIntent',
-      'INStartCallIntent',
-      'INSearchForMessagesIntent'
+      "INSendMessageIntent",
+      "INStartCallIntent",
+      "INSearchForMessagesIntent",
     ],
     [IntentCategory.TRAVEL]: [
-      'INBookRestaurantReservationIntent',
-      'INGetRideStatusIntent',
-      'INRequestRideIntent'
+      "INBookRestaurantReservationIntent",
+      "INGetRideStatusIntent",
+      "INRequestRideIntent",
     ],
     [IntentCategory.FINANCE]: [
-      'INSendPaymentIntent',
-      'INRequestPaymentIntent',
-      'INTransferMoneyIntent'
+      "INSendPaymentIntent",
+      "INRequestPaymentIntent",
+      "INTransferMoneyIntent",
     ],
     [IntentCategory.COMMERCE]: [
-      'INSearchForProductsIntent',
-      'INOrderProductIntent',
-      'INGetOrderStatusIntent'
-    ]
+      "INSearchForProductsIntent",
+      "INOrderProductIntent",
+      "INGetOrderStatusIntent",
+    ],
   },
   android: {
     [IntentCategory.SEARCH]: [
-      'actions.intent.GET_THING',
-      'actions.intent.SEARCH'
+      "actions.intent.GET_THING",
+      "actions.intent.SEARCH",
     ],
     [IntentCategory.MEDIA]: [
-      'actions.intent.PLAY_MEDIA',
-      'actions.intent.PAUSE_MEDIA'
+      "actions.intent.PLAY_MEDIA",
+      "actions.intent.PAUSE_MEDIA",
     ],
     [IntentCategory.PRODUCTIVITY]: [
-      'actions.intent.CREATE_THING',
-      'actions.intent.CREATE_TASK_LIST'
+      "actions.intent.CREATE_THING",
+      "actions.intent.CREATE_TASK_LIST",
     ],
     [IntentCategory.HEALTH]: [
-      'actions.intent.START_EXERCISE',
-      'actions.intent.STOP_EXERCISE'
+      "actions.intent.START_EXERCISE",
+      "actions.intent.STOP_EXERCISE",
     ],
     [IntentCategory.COMMUNICATION]: [
-      'actions.intent.SEND_MESSAGE',
-      'actions.intent.CALL'
+      "actions.intent.SEND_MESSAGE",
+      "actions.intent.CALL",
     ],
     [IntentCategory.TRAVEL]: [
-      'actions.intent.GET_RIDE',
-      'actions.intent.GET_RESERVATION',
-      'actions.intent.BOOK_RIDE'
+      "actions.intent.GET_RIDE",
+      "actions.intent.GET_RESERVATION",
+      "actions.intent.BOOK_RIDE",
     ],
     [IntentCategory.FINANCE]: [
-      'actions.intent.SEND_MONEY',
-      'actions.intent.PAY_BILL',
-      'actions.intent.CHECK_BALANCE'
+      "actions.intent.SEND_MONEY",
+      "actions.intent.PAY_BILL",
+      "actions.intent.CHECK_BALANCE",
     ],
     [IntentCategory.COMMERCE]: [
-      'actions.intent.ORDER_ITEM',
-      'actions.intent.GET_ORDER',
-      'actions.intent.ADD_TO_CART'
-    ]
-  }
+      "actions.intent.ORDER_ITEM",
+      "actions.intent.GET_ORDER",
+      "actions.intent.ADD_TO_CART",
+    ],
+  },
 };

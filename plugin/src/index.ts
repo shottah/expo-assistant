@@ -2,12 +2,16 @@
  * Main config plugin for expo-assistant
  */
 
-import { ConfigPlugin, withPlugins } from '@expo/config-plugins';
-import { ExpoAssistantPluginConfig } from './types';
-import { withIOSVoiceIntents } from './withIOSVoiceIntents';
-import { withAndroidVoiceIntents } from './withAndroidVoiceIntents';
+import { ConfigPlugin, withPlugins } from "@expo/config-plugins";
 
-const withExpoAssistant: ConfigPlugin<ExpoAssistantPluginConfig> = (config, props = {}) => {
+import { ExpoAssistantPluginConfig } from "./types";
+import { withAndroidVoiceIntents } from "./withAndroidVoiceIntents";
+import { withIOSVoiceIntents } from "./withIOSVoiceIntents";
+
+const withExpoAssistant: ConfigPlugin<ExpoAssistantPluginConfig> = (
+  config,
+  props = {}
+) => {
   const pluginConfig: ExpoAssistantPluginConfig = {
     // Default values
     enableSiriKit: true,
@@ -16,20 +20,23 @@ const withExpoAssistant: ConfigPlugin<ExpoAssistantPluginConfig> = (config, prop
     enableBackgroundExecution: false,
     intents: [],
     debugMode: false,
-    ...props
+    ...props,
   };
 
   if (pluginConfig.debugMode) {
-    console.log('[expo-assistant] Plugin configuration:', JSON.stringify(pluginConfig, null, 2));
+    console.log(
+      "[expo-assistant] Plugin configuration:",
+      JSON.stringify(pluginConfig, null, 2)
+    );
   }
 
   return withPlugins(config, [
     // iOS configuration
     [withIOSVoiceIntents, pluginConfig],
     // Android configuration
-    [withAndroidVoiceIntents, pluginConfig]
+    [withAndroidVoiceIntents, pluginConfig],
   ]);
 };
 
 export default withExpoAssistant;
-export { ExpoAssistantPluginConfig, IntentCategory } from './types';
+export { ExpoAssistantPluginConfig, IntentCategory } from "./types";

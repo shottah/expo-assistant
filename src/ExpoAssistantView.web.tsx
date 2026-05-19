@@ -1,6 +1,6 @@
-import * as React from 'react';
+import * as React from "react";
 
-import { ExpoAssistantViewProps } from './ExpoAssistant.types';
+import { ExpoAssistantViewProps } from "./ExpoAssistant.types";
 
 export default function ExpoAssistantView(props: ExpoAssistantViewProps) {
   return (

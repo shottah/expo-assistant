@@ -1,17 +1,19 @@
-import { VoiceAssistant } from '../VoiceAssistant';
-import { VoiceIntentBuilder } from '../builders/VoiceIntentBuilder';
+import ExpoAssistantModule from "../ExpoAssistantModule";
+import { VoiceAssistant } from "../VoiceAssistant";
+import { VoiceIntentBuilder } from "../builders/VoiceIntentBuilder";
 import {
   IntentCategory,
   ParameterType,
-  PermissionStatus
-} from '../types/VoiceAssistant.types';
-import ExpoAssistantModule from '../ExpoAssistantModule';
+  PermissionStatus,
+} from "../types/VoiceAssistant.types";
 
-jest.mock('../ExpoAssistantModule');
+jest.mock("../ExpoAssistantModule");
 
-describe('VoiceAssistant', () => {
+describe("VoiceAssistant", () => {
   let voiceAssistant: VoiceAssistant;
-  const mockModule = ExpoAssistantModule as jest.Mocked<typeof ExpoAssistantModule>;
+  const mockModule = ExpoAssistantModule as jest.Mocked<
+    typeof ExpoAssistantModule
+  >;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -19,13 +21,13 @@ describe('VoiceAssistant', () => {
 
     mockModule.initialize.mockResolvedValue(undefined);
     mockModule.registerIntent.mockResolvedValue(undefined);
-    mockModule.getPlatform.mockResolvedValue('ios');
-    mockModule.getLocale.mockResolvedValue('en-US');
+    mockModule.getPlatform.mockResolvedValue("ios");
+    mockModule.getLocale.mockResolvedValue("en-US");
     mockModule.addListener.mockImplementation(() => ({ remove: () => {} }));
   });
 
-  describe('Initialization', () => {
-    it('should initialize singleton instance', async () => {
+  describe("Initialization", () => {
+    it("should initialize singleton instance", async () => {
       const instance1 = await VoiceAssistant.initialize();
       const instance2 = await VoiceAssistant.initialize();
 
@@ -33,10 +35,10 @@ describe('VoiceAssistant', () => {
       expect(mockModule.initialize).toHaveBeenCalledTimes(1);
     });
 
-    it('should initialize with configuration', async () => {
+    it("should initialize with configuration", async () => {
       const config = {
         enableBackgroundExecution: true,
-        debugMode: true
+        debugMode: true,
       };
 
       await VoiceAssistant.initialize(config);
@@ -44,39 +46,38 @@ describe('VoiceAssistant', () => {
       expect(mockModule.initialize).toHaveBeenCalledWith(config);
     });
 
-    it('should setup event listeners on initialization', async () => {
+    it("should setup event listeners on initialization", async () => {
       await VoiceAssistant.initialize();
 
       expect(mockModule.addListener).toHaveBeenCalledWith(
-        'onIntentReceived',
+        "onIntentReceived",
         expect.any(Function)
       );
       expect(mockModule.addListener).toHaveBeenCalledWith(
-        'onIntentCompleted',
+        "onIntentCompleted",
         expect.any(Function)
       );
       expect(mockModule.addListener).toHaveBeenCalledWith(
-        'onIntentFailed',
+        "onIntentFailed",
         expect.any(Function)
       );
     });
 
-    it('should handle initialization failure', async () => {
-      mockModule.initialize.mockRejectedValue(new Error('Init failed'));
+    it("should handle initialization failure", async () => {
+      mockModule.initialize.mockRejectedValue(new Error("Init failed"));
 
-      await expect(VoiceAssistant.initialize()).rejects.toThrow('Init failed');
+      await expect(VoiceAssistant.initialize()).rejects.toThrow("Init failed");
     });
   });
 
-  describe('Intent Registration', () => {
+  describe("Intent Registration", () => {
     beforeEach(async () => {
       voiceAssistant = await VoiceAssistant.initialize();
     });
 
-    it('should register single intent', async () => {
-      const intent = VoiceIntentBuilder
-        .create()
-        .withId('test-intent')
+    it("should register single intent", async () => {
+      const intent = VoiceIntentBuilder.create()
+        .withId("test-intent")
         .withCategory(IntentCategory.CUSTOM)
         .withHandler({ handle: async () => ({}) })
         .build();
@@ -86,21 +87,20 @@ describe('VoiceAssistant', () => {
       await voiceAssistant.registerIntent(intent);
 
       expect(mockModule.registerIntent).toHaveBeenCalledWith({
-        id: 'test-intent',
+        id: "test-intent",
         category: IntentCategory.CUSTOM,
         parameters: [],
-        platforms: { ios: undefined, android: undefined }
+        platforms: { ios: undefined, android: undefined },
       });
 
       const registeredIntents = voiceAssistant.getRegisteredIntents();
       expect(registeredIntents).toHaveLength(1);
-      expect(registeredIntents[0].intent.id).toBe('test-intent');
+      expect(registeredIntents[0].intent.id).toBe("test-intent");
     });
 
-    it('should register intent with priority', async () => {
-      const intent = VoiceIntentBuilder
-        .create()
-        .withId('priority-intent')
+    it("should register intent with priority", async () => {
+      const intent = VoiceIntentBuilder.create()
+        .withId("priority-intent")
         .withCategory(IntentCategory.CUSTOM)
         .withHandler({ handle: async () => ({}) })
         .build();
@@ -111,20 +111,18 @@ describe('VoiceAssistant', () => {
       expect(registeredIntents[0].priority).toBe(10);
     });
 
-    it('should register multiple intents', async () => {
+    it("should register multiple intents", async () => {
       const intents = [
-        VoiceIntentBuilder
-          .create()
-          .withId('intent1')
+        VoiceIntentBuilder.create()
+          .withId("intent1")
           .withCategory(IntentCategory.SEARCH)
           .withHandler({ handle: async () => ({}) })
           .build(),
-        VoiceIntentBuilder
-          .create()
-          .withId('intent2')
+        VoiceIntentBuilder.create()
+          .withId("intent2")
           .withCategory(IntentCategory.MEDIA)
           .withHandler({ handle: async () => ({}) })
-          .build()
+          .build(),
       ];
 
       await voiceAssistant.registerIntents(intents);
@@ -133,24 +131,26 @@ describe('VoiceAssistant', () => {
       expect(voiceAssistant.getRegisteredIntents()).toHaveLength(2);
     });
 
-    it('should handle registration failure', async () => {
-      const intent = VoiceIntentBuilder
-        .create()
-        .withId('fail-intent')
+    it("should handle registration failure", async () => {
+      const intent = VoiceIntentBuilder.create()
+        .withId("fail-intent")
         .withCategory(IntentCategory.CUSTOM)
         .withHandler({ handle: async () => ({}) })
         .build();
 
-      mockModule.registerIntent.mockRejectedValue(new Error('Registration failed'));
+      mockModule.registerIntent.mockRejectedValue(
+        new Error("Registration failed")
+      );
 
-      await expect(voiceAssistant.registerIntent(intent)).rejects.toThrow('Registration failed');
+      await expect(voiceAssistant.registerIntent(intent)).rejects.toThrow(
+        "Registration failed"
+      );
       expect(voiceAssistant.getRegisteredIntents()).toHaveLength(0);
     });
 
-    it('should unregister intent', async () => {
-      const intent = VoiceIntentBuilder
-        .create()
-        .withId('temp-intent')
+    it("should unregister intent", async () => {
+      const intent = VoiceIntentBuilder.create()
+        .withId("temp-intent")
         .withCategory(IntentCategory.CUSTOM)
         .withHandler({ handle: async () => ({}) })
         .build();
@@ -159,138 +159,144 @@ describe('VoiceAssistant', () => {
       expect(voiceAssistant.getRegisteredIntents()).toHaveLength(1);
 
       mockModule.unregisterIntent.mockResolvedValue(undefined);
-      await voiceAssistant.unregisterIntent('temp-intent');
+      await voiceAssistant.unregisterIntent("temp-intent");
 
-      expect(mockModule.unregisterIntent).toHaveBeenCalledWith('temp-intent');
+      expect(mockModule.unregisterIntent).toHaveBeenCalledWith("temp-intent");
       expect(voiceAssistant.getRegisteredIntents()).toHaveLength(0);
     });
 
-    it('should throw when unregistering non-existent intent', async () => {
-      await expect(voiceAssistant.unregisterIntent('non-existent'))
-        .rejects.toThrow('Intent non-existent not registered');
+    it("should throw when unregistering non-existent intent", async () => {
+      await expect(
+        voiceAssistant.unregisterIntent("non-existent")
+      ).rejects.toThrow("Intent non-existent not registered");
     });
   });
 
-  describe('Intent Execution', () => {
+  describe("Intent Execution", () => {
     beforeEach(async () => {
       voiceAssistant = await VoiceAssistant.initialize();
     });
 
-    it('should execute intent with parameters', async () => {
-      const handler = jest.fn().mockResolvedValue({ result: 'success' });
+    it("should execute intent with parameters", async () => {
+      const handler = jest.fn().mockResolvedValue({ result: "success" });
 
-      const intent = VoiceIntentBuilder
-        .create<{ query: string }>()
-        .withId('search-intent')
+      const intent = VoiceIntentBuilder.create<{ query: string }>()
+        .withId("search-intent")
         .withCategory(IntentCategory.SEARCH)
-        .requiredParameter('query', { type: ParameterType.STRING })
+        .requiredParameter("query", { type: ParameterType.STRING })
         .withHandler({ handle: handler })
         .build();
 
       await voiceAssistant.registerIntent(intent);
 
-      const result = await voiceAssistant.executeIntent('search-intent', { query: 'test' });
+      const result = await voiceAssistant.executeIntent("search-intent", {
+        query: "test",
+      });
 
       expect(handler).toHaveBeenCalledWith(
-        { query: 'test' },
+        { query: "test" },
         expect.objectContaining({
-          platform: 'ios',
-          locale: 'en-US',
+          platform: "ios",
+          locale: "en-US",
           sessionId: expect.any(String),
-          timestamp: expect.any(Date)
+          timestamp: expect.any(Date),
         })
       );
 
       expect(result).toEqual({
         success: true,
-        data: { result: 'success' }
+        data: { result: "success" },
       });
     });
 
-    it('should handle parameter resolution', async () => {
-      const intent = VoiceIntentBuilder
-        .create<{ query: string }>()
-        .withId('resolve-intent')
+    it("should handle parameter resolution", async () => {
+      const intent = VoiceIntentBuilder.create<{ query: string }>()
+        .withId("resolve-intent")
         .withCategory(IntentCategory.SEARCH)
         .withHandler({
           resolve: async (params) => {
             if (!params.query) {
-              return { needsValue: 'query' };
+              return { needsValue: "query" };
             }
             return params as { query: string };
           },
-          handle: async (params) => ({ results: [params.query] })
+          handle: async (params) => ({ results: [params.query] }),
         })
         .build();
 
       await voiceAssistant.registerIntent(intent);
 
-      const result = await voiceAssistant.executeIntent('resolve-intent', {});
+      const result = await voiceAssistant.executeIntent("resolve-intent", {});
 
       expect(result).toEqual({
         success: false,
         needsDisambiguation: true,
-        message: 'Need value for: query'
+        message: "Need value for: query",
       });
     });
 
-    it('should handle execution errors', async () => {
-      const intent = VoiceIntentBuilder
-        .create()
-        .withId('error-intent')
+    it("should handle execution errors", async () => {
+      const intent = VoiceIntentBuilder.create()
+        .withId("error-intent")
         .withCategory(IntentCategory.CUSTOM)
         .withHandler({
-          handle: async () => { throw new Error('Execution failed'); }
+          handle: async () => {
+            throw new Error("Execution failed");
+          },
         })
         .build();
 
       await voiceAssistant.registerIntent(intent);
 
-      const result = await voiceAssistant.executeIntent('error-intent', {});
+      const result = await voiceAssistant.executeIntent("error-intent", {});
 
       expect(result).toEqual({
         success: false,
-        error: 'Execution failed'
+        error: "Execution failed",
       });
     });
 
-    it('should use error handler when provided', async () => {
-      const intent = VoiceIntentBuilder
-        .create()
-        .withId('handled-error-intent')
+    it("should use error handler when provided", async () => {
+      const intent = VoiceIntentBuilder.create()
+        .withId("handled-error-intent")
         .withCategory(IntentCategory.CUSTOM)
         .withHandler({
-          handle: async () => { throw new Error('Expected error'); },
-          onError: async (error) => ({ fallback: 'Error handled gracefully' })
+          handle: async () => {
+            throw new Error("Expected error");
+          },
+          onError: async (error) => ({ fallback: "Error handled gracefully" }),
         })
         .build();
 
       await voiceAssistant.registerIntent(intent);
 
-      const result = await voiceAssistant.executeIntent('handled-error-intent', {});
+      const result = await voiceAssistant.executeIntent(
+        "handled-error-intent",
+        {}
+      );
 
       expect(result).toEqual({
         success: false,
-        data: { fallback: 'Error handled gracefully' },
-        error: 'Expected error'
+        data: { fallback: "Error handled gracefully" },
+        error: "Expected error",
       });
     });
 
-    it('should throw when executing non-registered intent', async () => {
-      await expect(voiceAssistant.executeIntent('unknown', {}))
-        .rejects.toThrow('Intent unknown not registered');
+    it("should throw when executing non-registered intent", async () => {
+      await expect(voiceAssistant.executeIntent("unknown", {})).rejects.toThrow(
+        "Intent unknown not registered"
+      );
     });
   });
 
-  describe('Intent Donation', () => {
+  describe("Intent Donation", () => {
     beforeEach(async () => {
       voiceAssistant = await VoiceAssistant.initialize();
     });
 
-    it('should donate intent for Siri suggestions', async () => {
-      const intent = VoiceIntentBuilder
-        .create()
-        .withId('donate-intent')
+    it("should donate intent for Siri suggestions", async () => {
+      const intent = VoiceIntentBuilder.create()
+        .withId("donate-intent")
         .withCategory(IntentCategory.PRODUCTIVITY)
         .withHandler({ handle: async () => ({}) })
         .build();
@@ -299,27 +305,31 @@ describe('VoiceAssistant', () => {
 
       mockModule.donateIntent.mockResolvedValue(undefined);
 
-      await voiceAssistant.donateIntent('donate-intent', { task: 'Complete report' });
+      await voiceAssistant.donateIntent("donate-intent", {
+        task: "Complete report",
+      });
 
-      expect(mockModule.donateIntent).toHaveBeenCalledWith(
-        'donate-intent',
-        { task: 'Complete report' }
-      );
+      expect(mockModule.donateIntent).toHaveBeenCalledWith("donate-intent", {
+        task: "Complete report",
+      });
     });
 
-    it('should throw when donating non-registered intent', async () => {
-      await expect(voiceAssistant.donateIntent('unknown', {}))
-        .rejects.toThrow('Intent unknown not registered');
+    it("should throw when donating non-registered intent", async () => {
+      await expect(voiceAssistant.donateIntent("unknown", {})).rejects.toThrow(
+        "Intent unknown not registered"
+      );
     });
   });
 
-  describe('Permissions', () => {
+  describe("Permissions", () => {
     beforeEach(async () => {
       voiceAssistant = await VoiceAssistant.initialize();
     });
 
-    it('should request microphone permission', async () => {
-      mockModule.requestMicrophonePermission.mockResolvedValue(PermissionStatus.GRANTED);
+    it("should request microphone permission", async () => {
+      mockModule.requestMicrophonePermission.mockResolvedValue(
+        PermissionStatus.GRANTED
+      );
 
       const status = await voiceAssistant.requestMicrophonePermission();
 
@@ -327,8 +337,10 @@ describe('VoiceAssistant', () => {
       expect(mockModule.requestMicrophonePermission).toHaveBeenCalled();
     });
 
-    it('should request speech recognition permission', async () => {
-      mockModule.requestSpeechRecognitionPermission.mockResolvedValue(PermissionStatus.GRANTED);
+    it("should request speech recognition permission", async () => {
+      mockModule.requestSpeechRecognitionPermission.mockResolvedValue(
+        PermissionStatus.GRANTED
+      );
 
       const status = await voiceAssistant.requestSpeechRecognitionPermission();
 
@@ -336,14 +348,14 @@ describe('VoiceAssistant', () => {
       expect(mockModule.requestSpeechRecognitionPermission).toHaveBeenCalled();
     });
 
-    it('should check platform capabilities', async () => {
+    it("should check platform capabilities", async () => {
       const capabilities = {
         ios: {
           siriKitSupported: true,
           appIntentsSupported: true,
-          availableDomains: ['INSearchForMessagesIntent'],
-          speechRecognitionAvailable: true
-        }
+          availableDomains: ["INSearchForMessagesIntent"],
+          speechRecognitionAvailable: true,
+        },
       };
 
       mockModule.checkCapabilities.mockResolvedValue(capabilities);
@@ -354,7 +366,7 @@ describe('VoiceAssistant', () => {
     });
   });
 
-  describe('Event Handling', () => {
+  describe("Event Handling", () => {
     let eventHandler: jest.Mock;
 
     beforeEach(async () => {
@@ -362,78 +374,82 @@ describe('VoiceAssistant', () => {
       eventHandler = jest.fn();
     });
 
-    it('should add and trigger event listeners', async () => {
-      const intent = VoiceIntentBuilder
-        .create()
-        .withId('event-intent')
+    it("should add and trigger event listeners", async () => {
+      const intent = VoiceIntentBuilder.create()
+        .withId("event-intent")
         .withCategory(IntentCategory.CUSTOM)
         .withHandler({ handle: async () => ({}) })
         .build();
 
       await voiceAssistant.registerIntent(intent);
 
-      voiceAssistant.addEventListener('onIntentReceived', eventHandler);
+      voiceAssistant.addEventListener("onIntentReceived", eventHandler);
 
-      const receivedHandler = mockModule.addListener.mock.calls
-        .find(call => call[0] === 'onIntentReceived')?.[1];
+      const receivedHandler = mockModule.addListener.mock.calls.find(
+        (call) => call[0] === "onIntentReceived"
+      )?.[1];
 
-      receivedHandler?.({ intentId: 'event-intent', data: { test: 'data' } });
+      receivedHandler?.({ intentId: "event-intent", data: { test: "data" } });
 
       expect(eventHandler).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: 'onIntentReceived',
-          intentId: 'event-intent',
-          data: { test: 'data' },
-          timestamp: expect.any(Date)
+          type: "onIntentReceived",
+          intentId: "event-intent",
+          data: { test: "data" },
+          timestamp: expect.any(Date),
         })
       );
     });
 
-    it('should remove event listeners', () => {
-      const unsubscribe = voiceAssistant.addEventListener('onIntentCompleted', eventHandler);
+    it("should remove event listeners", () => {
+      const unsubscribe = voiceAssistant.addEventListener(
+        "onIntentCompleted",
+        eventHandler
+      );
 
       unsubscribe();
 
-      const completedHandler = mockModule.addListener.mock.calls
-        .find(call => call[0] === 'onIntentCompleted')?.[1];
+      const completedHandler = mockModule.addListener.mock.calls.find(
+        (call) => call[0] === "onIntentCompleted"
+      )?.[1];
 
-      completedHandler?.({ intentId: 'test', data: {} });
+      completedHandler?.({ intentId: "test", data: {} });
 
       expect(eventHandler).not.toHaveBeenCalled();
     });
 
-    it('should handle multiple listeners for same event', async () => {
+    it("should handle multiple listeners for same event", async () => {
       const handler1 = jest.fn();
       const handler2 = jest.fn();
 
-      const intent = VoiceIntentBuilder
-        .create()
-        .withId('multi-listener')
+      const intent = VoiceIntentBuilder.create()
+        .withId("multi-listener")
         .withCategory(IntentCategory.CUSTOM)
         .withHandler({ handle: async () => ({}) })
         .build();
 
       await voiceAssistant.registerIntent(intent);
 
-      voiceAssistant.addEventListener('onIntentFailed', handler1);
-      voiceAssistant.addEventListener('onIntentFailed', handler2);
+      voiceAssistant.addEventListener("onIntentFailed", handler1);
+      voiceAssistant.addEventListener("onIntentFailed", handler2);
 
-      const failedHandler = mockModule.addListener.mock.calls
-        .find(call => call[0] === 'onIntentFailed')?.[1];
+      const failedHandler = mockModule.addListener.mock.calls.find(
+        (call) => call[0] === "onIntentFailed"
+      )?.[1];
 
-      failedHandler?.({ intentId: 'multi-listener', error: new Error('Test') });
+      failedHandler?.({ intentId: "multi-listener", error: new Error("Test") });
 
       expect(handler1).toHaveBeenCalled();
       expect(handler2).toHaveBeenCalled();
     });
   });
 
-  describe('Platform Features', () => {
+  describe("Platform Features", () => {
     beforeEach(async () => {
       voiceAssistant = await VoiceAssistant.initialize();
     });
 
-    it('should enable SiriKit', async () => {
+    it("should enable SiriKit", async () => {
       mockModule.enableSiriKit.mockResolvedValue(undefined);
 
       await voiceAssistant.enableSiriKit();
@@ -441,7 +457,7 @@ describe('VoiceAssistant', () => {
       expect(mockModule.enableSiriKit).toHaveBeenCalled();
     });
 
-    it('should enable App Actions', async () => {
+    it("should enable App Actions", async () => {
       mockModule.enableAppActions.mockResolvedValue(undefined);
 
       await voiceAssistant.enableAppActions();
@@ -449,7 +465,7 @@ describe('VoiceAssistant', () => {
       expect(mockModule.enableAppActions).toHaveBeenCalled();
     });
 
-    it('should enable background processing', async () => {
+    it("should enable background processing", async () => {
       mockModule.enableBackgroundProcessing.mockResolvedValue(undefined);
 
       await voiceAssistant.enableBackgroundProcessing();
@@ -457,7 +473,7 @@ describe('VoiceAssistant', () => {
       expect(mockModule.enableBackgroundProcessing).toHaveBeenCalled();
     });
 
-    it('should enable custom UI', async () => {
+    it("should enable custom UI", async () => {
       mockModule.enableCustomUI.mockResolvedValue(undefined);
 
       await voiceAssistant.enableCustomUI();
@@ -465,7 +481,7 @@ describe('VoiceAssistant', () => {
       expect(mockModule.enableCustomUI).toHaveBeenCalled();
     });
 
-    it('should set debug mode', async () => {
+    it("should set debug mode", async () => {
       mockModule.setDebugMode.mockResolvedValue(undefined);
 
       await voiceAssistant.setDebugMode(true);

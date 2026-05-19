@@ -8,19 +8,22 @@ import {
   withAndroidManifest,
   withDangerousMod,
   AndroidConfig,
-  ExportedConfigWithProps
-} from '@expo/config-plugins';
-import { ExpoAssistantPluginConfig, INTENT_TYPE_MAPPINGS } from './types';
-import * as path from 'path';
-import * as fs from 'fs';
+  ExportedConfigWithProps,
+} from "@expo/config-plugins";
+import * as fs from "fs";
+import * as path from "path";
 
-export const withAndroidVoiceIntents: ConfigPlugin<ExpoAssistantPluginConfig> = (config, props) => {
+import { ExpoAssistantPluginConfig, INTENT_TYPE_MAPPINGS } from "./types";
+
+export const withAndroidVoiceIntents: ConfigPlugin<
+  ExpoAssistantPluginConfig
+> = (config, props) => {
   config = withAndroidManifest(config, (config) => {
     return setAndroidManifest(config, props);
   });
 
   config = withDangerousMod(config, [
-    'android',
+    "android",
     async (config) => {
       await createShortcutsXml(config, props);
       if (props.android?.slicesEnabled) {
@@ -30,7 +33,7 @@ export const withAndroidVoiceIntents: ConfigPlugin<ExpoAssistantPluginConfig> = 
         await createVoiceInteractionService(config, props);
       }
       return config;
-    }
+    },
   ]);
 
   return config;
@@ -41,7 +44,8 @@ function setAndroidManifest(
   props: ExpoAssistantPluginConfig
 ): ExportedConfigWithProps {
   const androidManifest = config.modResults;
-  const mainApplication = AndroidConfig.Manifest.getMainApplicationOrThrow(androidManifest);
+  const mainApplication =
+    AndroidConfig.Manifest.getMainApplicationOrThrow(androidManifest);
 
   // Add permissions
   if (!androidManifest.manifest.permission) {
@@ -49,123 +53,142 @@ function setAndroidManifest(
   }
 
   const permissions = [
-    'android.permission.RECORD_AUDIO',
-    'android.permission.INTERNET',
-    'android.permission.INSTALL_SHORTCUT'
+    "android.permission.RECORD_AUDIO",
+    "android.permission.INTERNET",
+    "android.permission.INSTALL_SHORTCUT",
   ];
 
   // Add Google Fit permissions if enabled
   if (props.enableGoogleFit) {
     permissions.push(
-      'android.permission.ACTIVITY_RECOGNITION',
-      'android.permission.ACCESS_FINE_LOCATION'
+      "android.permission.ACTIVITY_RECOGNITION",
+      "android.permission.ACCESS_FINE_LOCATION"
     );
   }
 
   // Add media session permissions if enabled
   if (props.enableMediaSession) {
     permissions.push(
-      'android.permission.MEDIA_CONTENT_CONTROL',
-      'android.permission.WAKE_LOCK'
+      "android.permission.MEDIA_CONTENT_CONTROL",
+      "android.permission.WAKE_LOCK"
     );
   }
 
-  permissions.forEach(permission => {
-    if (!androidManifest.manifest['uses-permission']?.find(
-      (p: { $: { 'android:name': string } }) => p.$['android:name'] === permission
-    )) {
-      if (!androidManifest.manifest['uses-permission']) {
-        androidManifest.manifest['uses-permission'] = [];
+  permissions.forEach((permission) => {
+    if (
+      !androidManifest.manifest["uses-permission"]?.find(
+        (p: { $: { "android:name": string } }) =>
+          p.$["android:name"] === permission
+      )
+    ) {
+      if (!androidManifest.manifest["uses-permission"]) {
+        androidManifest.manifest["uses-permission"] = [];
       }
-      androidManifest.manifest['uses-permission'].push({
+      androidManifest.manifest["uses-permission"].push({
         $: {
-          'android:name': permission
-        }
+          "android:name": permission,
+        },
       });
     }
   });
 
   // Add metadata for App Actions
   const mainApp = mainApplication as Record<string, unknown>;
-  if (!mainApp['meta-data']) {
-    mainApp['meta-data'] = [];
+  if (!mainApp["meta-data"]) {
+    mainApp["meta-data"] = [];
   }
 
   // Add shortcuts metadata
   const shortcutsMetadata = {
     $: {
-      'android:name': 'android.app.shortcuts',
-      'android:resource': '@xml/shortcuts'
-    }
+      "android:name": "android.app.shortcuts",
+      "android:resource": "@xml/shortcuts",
+    },
   };
 
-  if (!(mainApp['meta-data'] as Array<{$: {'android:name': string}}>).find(
-    m => m.$['android:name'] === 'android.app.shortcuts'
-  )) {
-    (mainApp['meta-data'] as Array<unknown>).push(shortcutsMetadata);
+  if (
+    !(mainApp["meta-data"] as { $: { "android:name": string } }[]).find(
+      (m) => m.$["android:name"] === "android.app.shortcuts"
+    )
+  ) {
+    (mainApp["meta-data"] as unknown[]).push(shortcutsMetadata);
   }
 
   // Add App Actions test URL if provided
   if (props.android?.appActionsTestUrl) {
     const testUrlMetadata = {
       $: {
-        'android:name': 'com.google.android.actions.APP_ACTIONS_TEST_URL',
-        'android:value': props.android.appActionsTestUrl
-      }
+        "android:name": "com.google.android.actions.APP_ACTIONS_TEST_URL",
+        "android:value": props.android.appActionsTestUrl,
+      },
     };
 
-    if (!(mainApp['meta-data'] as Array<{$: {'android:name': string}}>).find(
-      m => m.$['android:name'] === 'com.google.android.actions.APP_ACTIONS_TEST_URL'
-    )) {
-      (mainApp['meta-data'] as Array<unknown>).push(testUrlMetadata);
+    if (
+      !(mainApp["meta-data"] as { $: { "android:name": string } }[]).find(
+        (m) =>
+          m.$["android:name"] ===
+          "com.google.android.actions.APP_ACTIONS_TEST_URL"
+      )
+    ) {
+      (mainApp["meta-data"] as unknown[]).push(testUrlMetadata);
     }
   }
 
   // Add deep link intent filters with auto-verify
-  const mainActivity = AndroidConfig.Manifest.getMainActivityOrThrow(androidManifest);
+  const mainActivity =
+    AndroidConfig.Manifest.getMainActivityOrThrow(androidManifest);
 
   if (props.android?.deepLinkVerification !== false) {
     const deepLinkFilter = {
       $: {
-        'android:autoVerify': 'true'
+        "android:autoVerify": "true",
       },
-      action: [{
-        $: {
-          'android:name': 'android.intent.action.VIEW'
-        }
-      }],
+      action: [
+        {
+          $: {
+            "android:name": "android.intent.action.VIEW",
+          },
+        },
+      ],
       category: [
         {
           $: {
-            'android:name': 'android.intent.category.DEFAULT'
-          }
+            "android:name": "android.intent.category.DEFAULT",
+          },
         },
         {
           $: {
-            'android:name': 'android.intent.category.BROWSABLE'
-          }
-        }
+            "android:name": "android.intent.category.BROWSABLE",
+          },
+        },
       ],
-      data: [{
-        $: {
-          'android:scheme': 'https',
-          'android:host': config.scheme || 'yourapp.com',
-          'android:pathPrefix': '/action'
-        }
-      }]
+      data: [
+        {
+          $: {
+            "android:scheme": "https",
+            "android:host": config.scheme || "yourapp.com",
+            "android:pathPrefix": "/action",
+          },
+        },
+      ],
     };
 
-    if (!mainActivity['intent-filter']) {
-      mainActivity['intent-filter'] = [];
+    if (!mainActivity["intent-filter"]) {
+      mainActivity["intent-filter"] = [];
     }
 
     // Check if deep link filter already exists
-    const hasDeepLink = mainActivity['intent-filter'].some((filter: Record<string, unknown>) =>
-      (filter.data as Array<{$: Record<string, string>}>)?.some(d => d.$['android:pathPrefix'] === '/action')
+    const hasDeepLink = mainActivity["intent-filter"].some(
+      (filter: Record<string, unknown>) =>
+        (filter.data as { $: Record<string, string> }[])?.some(
+          (d) => d.$["android:pathPrefix"] === "/action"
+        )
     );
 
     if (!hasDeepLink) {
-      mainActivity['intent-filter'].push(deepLinkFilter as Record<string, unknown>);
+      mainActivity["intent-filter"].push(
+        deepLinkFilter as Record<string, unknown>
+      );
     }
   }
 
@@ -177,22 +200,28 @@ function setAndroidManifest(
 
     const voiceService = {
       $: {
-        'android:name': '.VoiceInteractionService',
-        'android:permission': 'android.permission.BIND_VOICE_INTERACTION'
+        "android:name": ".VoiceInteractionService",
+        "android:permission": "android.permission.BIND_VOICE_INTERACTION",
       },
-      'intent-filter': [{
-        action: [{
-          $: {
-            'android:name': 'android.service.voice.VoiceInteractionService'
-          }
-        }]
-      }]
+      "intent-filter": [
+        {
+          action: [
+            {
+              $: {
+                "android:name": "android.service.voice.VoiceInteractionService",
+              },
+            },
+          ],
+        },
+      ],
     };
 
-    if (!(mainApp.service as Array<{$: {'android:name': string}}>).find(
-      s => s.$['android:name'] === '.VoiceInteractionService'
-    )) {
-      (mainApp.service as Array<unknown>).push(voiceService);
+    if (
+      !(mainApp.service as { $: { "android:name": string } }[]).find(
+        (s) => s.$["android:name"] === ".VoiceInteractionService"
+      )
+    ) {
+      (mainApp.service as unknown[]).push(voiceService);
     }
   }
 
@@ -204,21 +233,25 @@ function setAndroidManifest(
 
     const sliceProvider = {
       $: {
-        'android:name': '.SliceProvider',
-        'android:authorities': `${config.android?.package || 'com.yourapp'}.sliceprovider`,
-        'android:exported': 'true'
-      }
+        "android:name": ".SliceProvider",
+        "android:authorities": `${
+          config.android?.package || "com.yourapp"
+        }.sliceprovider`,
+        "android:exported": "true",
+      },
     };
 
-    if (!(mainApp.provider as Array<{$: {'android:name': string}}>).find(
-      p => p.$['android:name'] === '.SliceProvider'
-    )) {
-      (mainApp.provider as Array<unknown>).push(sliceProvider);
+    if (
+      !(mainApp.provider as { $: { "android:name": string } }[]).find(
+        (p) => p.$["android:name"] === ".SliceProvider"
+      )
+    ) {
+      (mainApp.provider as unknown[]).push(sliceProvider);
     }
   }
 
   if (props.debugMode) {
-    console.log('[expo-assistant] Android manifest configured');
+    console.log("[expo-assistant] Android manifest configured");
   }
 
   return config;
@@ -229,14 +262,22 @@ async function createShortcutsXml(
   props: ExpoAssistantPluginConfig
 ): Promise<void> {
   const projectRoot = config.modRequest.projectRoot;
-  const resPath = path.join(projectRoot, 'android', 'app', 'src', 'main', 'res', 'xml');
+  const resPath = path.join(
+    projectRoot,
+    "android",
+    "app",
+    "src",
+    "main",
+    "res",
+    "xml"
+  );
 
   // Create xml directory if it doesn't exist
   if (!fs.existsSync(resPath)) {
     fs.mkdirSync(resPath, { recursive: true });
   }
 
-  const packageName = config.android?.package || 'com.yourapp';
+  const packageName = config.android?.package || "com.yourapp";
 
   // Build shortcuts XML
   let shortcutsXml = `<?xml version="1.0" encoding="utf-8"?>
@@ -245,11 +286,16 @@ async function createShortcutsXml(
 
   // Add shortcuts based on intent categories
   if (props.intents) {
-    props.intents.forEach(category => {
+    props.intents.forEach((category) => {
       const capabilities = INTENT_TYPE_MAPPINGS.android[category];
       if (capabilities) {
         capabilities.forEach((capability: string) => {
-          shortcutsXml += generateCapability(capability, packageName, category, props);
+          shortcutsXml += generateCapability(
+            capability,
+            packageName,
+            category,
+            props
+          );
         });
       }
     });
@@ -260,10 +306,10 @@ async function createShortcutsXml(
     shortcutsXml += `
   <!-- Custom Vocabulary -->
   <vocabulary>`;
-    props.android.customVocabulary.terms.forEach(term => {
+    props.android.customVocabulary.terms.forEach((term) => {
       shortcutsXml += `
     <term android:value="${term.value}">`;
-      term.synonyms.forEach(synonym => {
+      term.synonyms.forEach((synonym) => {
         shortcutsXml += `
       <synonym android:value="${synonym}" />`;
       });
@@ -278,7 +324,7 @@ async function createShortcutsXml(
 </shortcuts>`;
 
   // Write shortcuts.xml
-  fs.writeFileSync(path.join(resPath, 'shortcuts.xml'), shortcutsXml);
+  fs.writeFileSync(path.join(resPath, "shortcuts.xml"), shortcutsXml);
 
   if (props.debugMode) {
     console.log(`[expo-assistant] shortcuts.xml created at ${resPath}`);
@@ -292,14 +338,14 @@ function generateCapability(
   props: ExpoAssistantPluginConfig
 ): string {
   const categoryActionMap: Record<string, string> = {
-    'actions.intent.GET_THING': 'SEARCH',
-    'actions.intent.PLAY_MEDIA': 'PLAY_MEDIA',
-    'actions.intent.CREATE_THING': 'CREATE_TASK',
-    'actions.intent.START_EXERCISE': 'START_WORKOUT',
-    'actions.intent.SEND_MESSAGE': 'SEND_MESSAGE'
+    "actions.intent.GET_THING": "SEARCH",
+    "actions.intent.PLAY_MEDIA": "PLAY_MEDIA",
+    "actions.intent.CREATE_THING": "CREATE_TASK",
+    "actions.intent.START_EXERCISE": "START_WORKOUT",
+    "actions.intent.SEND_MESSAGE": "SEND_MESSAGE",
   };
 
-  const action = categoryActionMap[capability] || 'CUSTOM_ACTION';
+  const action = categoryActionMap[capability] || "CUSTOM_ACTION";
   const hasSlices = props.android?.slicesEnabled;
 
   let xml = `
@@ -311,31 +357,31 @@ function generateCapability(
 
   // Add parameters based on capability
   switch (capability) {
-    case 'actions.intent.GET_THING':
+    case "actions.intent.GET_THING":
       xml += `
       <parameter
         android:name="thing.name"
         android:key="query" />`;
       break;
-    case 'actions.intent.PLAY_MEDIA':
+    case "actions.intent.PLAY_MEDIA":
       xml += `
       <parameter
         android:name="media.name"
         android:key="mediaTitle" />`;
       break;
-    case 'actions.intent.CREATE_THING':
+    case "actions.intent.CREATE_THING":
       xml += `
       <parameter
         android:name="thing.name"
         android:key="taskTitle" />`;
       break;
-    case 'actions.intent.START_EXERCISE':
+    case "actions.intent.START_EXERCISE":
       xml += `
       <parameter
         android:name="exercise.name"
         android:key="exerciseType" />`;
       break;
-    case 'actions.intent.SEND_MESSAGE':
+    case "actions.intent.SEND_MESSAGE":
       xml += `
       <parameter
         android:name="message.recipient.name"
@@ -367,15 +413,15 @@ async function createSliceProvider(
   props: ExpoAssistantPluginConfig
 ): Promise<void> {
   const projectRoot = config.modRequest.projectRoot;
-  const packageName = config.android?.package || 'com.yourapp';
+  const packageName = config.android?.package || "com.yourapp";
   const javaPath = path.join(
     projectRoot,
-    'android',
-    'app',
-    'src',
-    'main',
-    'java',
-    ...packageName.split('.')
+    "android",
+    "app",
+    "src",
+    "main",
+    "java",
+    ...packageName.split(".")
   );
 
   if (!fs.existsSync(javaPath)) {
@@ -482,7 +528,10 @@ class SliceProvider : SliceProvider() {
 }
 `;
 
-  fs.writeFileSync(path.join(javaPath, 'SliceProvider.kt'), sliceProviderKotlin);
+  fs.writeFileSync(
+    path.join(javaPath, "SliceProvider.kt"),
+    sliceProviderKotlin
+  );
 
   if (props.debugMode) {
     console.log(`[expo-assistant] SliceProvider created at ${javaPath}`);
@@ -494,15 +543,15 @@ async function createVoiceInteractionService(
   props: ExpoAssistantPluginConfig
 ): Promise<void> {
   const projectRoot = config.modRequest.projectRoot;
-  const packageName = config.android?.package || 'com.yourapp';
+  const packageName = config.android?.package || "com.yourapp";
   const javaPath = path.join(
     projectRoot,
-    'android',
-    'app',
-    'src',
-    'main',
-    'java',
-    ...packageName.split('.')
+    "android",
+    "app",
+    "src",
+    "main",
+    "java",
+    ...packageName.split(".")
   );
 
   if (!fs.existsSync(javaPath)) {
@@ -612,9 +661,14 @@ class VoiceSession(service: VoiceInteractionService) : VoiceInteractionSession(s
 }
 `;
 
-  fs.writeFileSync(path.join(javaPath, 'VoiceInteractionService.kt'), voiceInteractionServiceKotlin);
+  fs.writeFileSync(
+    path.join(javaPath, "VoiceInteractionService.kt"),
+    voiceInteractionServiceKotlin
+  );
 
   if (props.debugMode) {
-    console.log(`[expo-assistant] VoiceInteractionService created at ${javaPath}`);
+    console.log(
+      `[expo-assistant] VoiceInteractionService created at ${javaPath}`
+    );
   }
 }
