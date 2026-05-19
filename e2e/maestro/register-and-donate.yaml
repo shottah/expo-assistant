@@ -1,0 +1,19 @@
+# Smoke flow: app launches, registers the search intent, then donates it.
+# Anchors:
+#   - testID="status" — surfaces VoiceAssistant lifecycle state
+#   - testID="donate" — fires donateIntent on press
+#
+# Run locally (with the example app installed on a simulator/emulator):
+#   maestro test e2e/maestro/register-and-donate.yaml
+appId: expo.modules.assistant.example
+---
+- launchApp:
+    clearState: true
+- assertVisible:
+    id: status
+    text: registered
+- tapOn:
+    id: donate
+- assertVisible:
+    id: status
+    text: donated
