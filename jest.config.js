@@ -30,15 +30,15 @@ module.exports = {
     "!plugin/__tests__/**",
   ],
   coverageThreshold: {
-    // Set near current baseline to catch regressions; Codecov tracks
-    // absolute coverage and trends. Raise these as the dangerous Android
-    // mods (write to disk) and the .web shim get real coverage in the
-    // upcoming e2e and example-app work.
+    // Pinned at current baseline minus a tiny buffer. Codecov tracks the
+    // trend; jest enforces "don't regress". Raise as new test coverage
+    // ships (e.g. when iOS test execution gets wired, when the dangerous
+    // Android mods get exercised via the e2e flow).
     global: {
       branches: 55,
-      functions: 70,
-      lines: 65,
-      statements: 65,
+      functions: 72,
+      lines: 68,
+      statements: 68,
     },
   },
   coverageReporters: ["text", "lcov", "html"],
