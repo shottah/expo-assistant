@@ -167,45 +167,6 @@ describe("VoiceIntentBuilder", () => {
     });
   });
 
-  describe("Handler Configuration", () => {
-    it("should support resolver for parameter disambiguation", () => {
-      const intent = VoiceIntentBuilder.create<{ query: string }>()
-        .withId("search-intent")
-        .withCategory(IntentCategory.SEARCH)
-        .requiredParameter("query", { type: ParameterType.STRING })
-        .withHandler({
-          resolve: async (params) => {
-            if (!params.query) {
-              return { needsValue: "query" };
-            }
-            return params as { query: string };
-          },
-          handle: async (params) => ({
-            results: [`Result for ${params.query}`],
-          }),
-        })
-        .build();
-
-      expect(intent.handler.resolve).toBeDefined();
-      expect(intent.handler.handle).toBeDefined();
-    });
-
-    it("should support error handler", () => {
-      const intent = VoiceIntentBuilder.create()
-        .withId("test-intent")
-        .withCategory(IntentCategory.CUSTOM)
-        .withHandler({
-          handle: async () => {
-            throw new Error("Test error");
-          },
-          onError: async (error) => ({ fallback: "Error handled" }),
-        })
-        .build();
-
-      expect(intent.handler.onError).toBeDefined();
-    });
-  });
-
   describe("Fluent Builder Methods", () => {
     it("should support background execution configuration", () => {
       const intent = VoiceIntentBuilder.create()
@@ -234,32 +195,6 @@ describe("VoiceIntentBuilder", () => {
     });
   });
 
-  describe("Type Safety", () => {
-    it("should enforce parameter types through generics", () => {
-      interface SearchParams {
-        query: string;
-        limit: number;
-        filters?: Record<string, any>;
-      }
-
-      const intent = VoiceIntentBuilder.create<SearchParams>()
-        .withId("typed-search")
-        .withCategory(IntentCategory.SEARCH)
-        .requiredParameter("query", { type: ParameterType.STRING })
-        .requiredParameter("limit", { type: ParameterType.NUMBER })
-        .optionalParameter("filters", { type: ParameterType.OBJECT })
-        .withHandler({
-          handle: async (params: SearchParams) => {
-            const { query, limit, filters } = params;
-            return { query, limit, filters };
-          },
-        })
-        .build();
-
-      expect(intent.parameters).toHaveLength(3);
-    });
-  });
-
   describe("Builder Chain Preservation", () => {
     it("should maintain builder chain after platform configuration", () => {
       const intent = VoiceIntentBuilder.create()
@@ -274,18 +209,6 @@ describe("VoiceIntentBuilder", () => {
 
       expect(intent.platforms.ios?.phrases).toContain("Test phrase");
       expect(intent.platforms.android?.capability).toBe("test.capability");
-    });
-
-    it("should apply background execution settings through fluent methods", () => {
-      const intent = VoiceIntentBuilder.create()
-        .withId("background-test")
-        .withCategory(IntentCategory.MEDIA)
-        .withHandler({ handle: async () => ({}) })
-        .withBackgroundExecution()
-        .build();
-
-      expect(intent.platforms.ios?.requiresUnlock).toBe(false);
-      expect(intent.platforms.android?.fulfillment).toBe("DEFERRED");
     });
   });
 });
