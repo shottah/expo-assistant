@@ -7,28 +7,24 @@ on:
 
 # Sequential gates with parallel native branches. Fast cheap jobs run
 # first; expensive native + e2e jobs only spin up if the cheap gates
-# pass. Saves runner minutes and gives faster failure feedback.
+# pass AND a reviewer approves the `native-tests` environment.
 #
-#   build-and-lint
+#   build + lint
 #         │
 #         ▼
-#   js-unit-test
+#       js test (unit + bridge contracts)
 #         │
-#         ▼
-#   js-bridge-test
-#         │
-#    ┌────┴────┐
+#    ┌────┴────┐  ← native-tests environment requires manual approval
 #    ▼         ▼
-# ios-       android-
-# module-    module-
-# test       test
+# ios        android
+# module     module
 #    │         │
 #    ▼         ▼
 # ios-e2e   android-e2e   ← both currently skipped via `if: false`
 
 jobs:
   build-and-lint:
-    name: 1 · build + lint
+    name: build + lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,8 +50,8 @@ jobs:
       - name: Build
         run: bun run build
 
-  js-unit-test:
-    name: 2 · js unit tests
+  js-test:
+    name: js test
     needs: build-and-lint
     runs-on: ubuntu-latest
     steps:
@@ -76,9 +72,11 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # Skip the contract suites — those run as their own bridge gate.
-      - name: Run unit tests (with coverage)
-        run: bun run test --ci --coverage --testPathIgnorePatterns "Contract\.test\.ts"
+      # All JS tests — unit suites (VoiceAssistant, VoiceIntentBuilder,
+      # plugin, integration) plus the bridge contract suites
+      # (NativeModuleContract, CrossPlatformContract).
+      - name: Run tests (with coverage)
+        run: bun run test --ci --coverage
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -95,38 +93,15 @@ jobs:
           name: coverage-js
           path: coverage
 
-  js-bridge-test:
-    name: 3 · js bridge contracts
-    needs: js-unit-test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.1
-
-      - name: Cache bun dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.bun/install/cache
-          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock', 'example/bun.lock') }}
-          restore-keys: |
-            bun-${{ runner.os }}-
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      # Contract tests pin the JS↔native interface — verify TS shim
-      # method names + iOS Swift + Android Kotlin AsyncFunction
-      # registrations all agree.
-      - name: Run bridge contract tests
-        run: bun run test --ci --testPathPattern "Contract\.test\.ts"
-
   ios-module-test:
-    name: 4a · ios module (build verification)
-    needs: js-bridge-test
+    name: ios module (build verification)
+    needs: js-test
     runs-on: macos-15
+    # `native-tests` environment must exist in repo settings with at
+    # least one required reviewer. Until a reviewer approves the run,
+    # this job (and its e2e descendant) stay paused. See README for
+    # one-time setup instructions.
+    environment: native-tests
     steps:
       - uses: actions/checkout@v4
 
@@ -183,7 +158,7 @@ jobs:
             -quiet
 
   ios-e2e:
-    name: 5a · ios example app e2e (skipped)
+    name: ios example app e2e (skipped)
     needs: ios-module-test
     runs-on: macos-15
     # Skipped: iOS e2e plumbing (Maestro on iOS simulator) is unwired.
@@ -195,9 +170,10 @@ jobs:
       - run: echo "iOS e2e is a placeholder. Flip the job-level \`if\` to enable."
 
   android-module-test:
-    name: 4b · android module (JUnit + JaCoCo)
-    needs: js-bridge-test
+    name: android module (JUnit + JaCoCo)
+    needs: js-test
     runs-on: ubuntu-latest
+    environment: native-tests
     steps:
       - uses: actions/checkout@v4
 
@@ -261,7 +237,7 @@ jobs:
             example/android/expo-assistant/build/reports/jacoco
 
   android-e2e:
-    name: 5b · android example app e2e (skipped)
+    name: android example app e2e (skipped)
     needs: android-module-test
     runs-on: ubuntu-latest
     # Skipped: emulator boot + Maestro flow is currently flaky and the
