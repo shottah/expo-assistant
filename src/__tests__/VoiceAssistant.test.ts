@@ -444,6 +444,95 @@ describe("VoiceAssistant", () => {
     });
   });
 
+  describe("Intent Invocation (voice → JS handler)", () => {
+    beforeEach(async () => {
+      voiceAssistant = await VoiceAssistant.initialize();
+    });
+
+    it("routes onIntentInvoked events to the registered handler with parameters", async () => {
+      const handlerMock = jest.fn().mockResolvedValue({ ok: true });
+      const intent = VoiceIntentBuilder.create<{ query: string }>()
+        .withId("search")
+        .withCategory(IntentCategory.SEARCH)
+        .requiredParameter("query", { type: ParameterType.STRING })
+        .withHandler({ handle: handlerMock })
+        .build();
+
+      await voiceAssistant.registerIntent(intent);
+
+      const invokedListener = mockModule.addListener.mock.calls.find(
+        (call) => call[0] === "onIntentInvoked"
+      )?.[1];
+      expect(invokedListener).toBeDefined();
+
+      invokedListener!({ intentId: "search", parameters: { query: "tacos" } });
+
+      // Flush microtasks so the async dispatch completes.
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(handlerMock).toHaveBeenCalledWith(
+        { query: "tacos" },
+        expect.objectContaining({
+          platform: "ios",
+          locale: "en-US",
+          sessionId: expect.any(String),
+          timestamp: expect.any(Date),
+        })
+      );
+    });
+
+    it("silently drops onIntentInvoked for unknown intentId", async () => {
+      const invokedListener = mockModule.addListener.mock.calls.find(
+        (call) => call[0] === "onIntentInvoked"
+      )?.[1];
+      expect(invokedListener).toBeDefined();
+
+      // Should not throw, should not warn loudly.
+      expect(() =>
+        invokedListener!({ intentId: "never-registered", parameters: {} })
+      ).not.toThrow();
+      await new Promise((resolve) => setImmediate(resolve));
+    });
+
+    it("runs the handler's resolver and routes through executeIntent", async () => {
+      const handlerMock = jest.fn().mockResolvedValue({ ok: true });
+      const resolveMock = jest.fn().mockImplementation(async (params: any) => {
+        if (!params.query) return { needsValue: "query" };
+        return params;
+      });
+
+      const intent = VoiceIntentBuilder.create<{ query: string }>()
+        .withId("search-resolve")
+        .withCategory(IntentCategory.SEARCH)
+        .requiredParameter("query", { type: ParameterType.STRING })
+        .withHandler({ resolve: resolveMock, handle: handlerMock })
+        .build();
+
+      await voiceAssistant.registerIntent(intent);
+
+      const invokedListener = mockModule.addListener.mock.calls.find(
+        (call) => call[0] === "onIntentInvoked"
+      )?.[1];
+
+      // Missing query → resolver returns needsValue → handler not called.
+      invokedListener!({ intentId: "search-resolve", parameters: {} });
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(resolveMock).toHaveBeenCalled();
+      expect(handlerMock).not.toHaveBeenCalled();
+
+      // With query → handler is called.
+      invokedListener!({
+        intentId: "search-resolve",
+        parameters: { query: "tacos" },
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(handlerMock).toHaveBeenCalledWith(
+        { query: "tacos" },
+        expect.any(Object)
+      );
+    });
+  });
+
   describe("Platform Features", () => {
     beforeEach(async () => {
       voiceAssistant = await VoiceAssistant.initialize();

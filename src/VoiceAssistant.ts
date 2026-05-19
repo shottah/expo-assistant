@@ -57,6 +57,31 @@ export class VoiceAssistant {
       "onIntentFailed",
       this.handleIntentFailed.bind(this)
     );
+    // Voice-triggered invocation from Siri / Google Assistant — routes
+    // back to the user-registered handler via executeIntent, which
+    // already wraps resolver / handler / onError.
+    ExpoAssistantModule.addListener(
+      "onIntentInvoked",
+      this.handleIntentInvoked.bind(this)
+    );
+  }
+
+  private handleIntentInvoked(event: {
+    intentId: string;
+    parameters: Record<string, unknown>;
+  }): void {
+    if (!this.registeredIntents.has(event.intentId)) {
+      // Unknown intent — emission from a stale donation or another
+      // session. Silently ignore so the JS layer doesn't crash on
+      // surprise events.
+      return;
+    }
+    void this.executeIntent(event.intentId, event.parameters).catch((err) => {
+      console.error(
+        `expo-assistant: handler for ${event.intentId} threw during invocation`,
+        err
+      );
+    });
   }
 
   private handleIntentReceived(event: any): void {
