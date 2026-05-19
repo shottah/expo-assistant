@@ -94,7 +94,7 @@ jobs:
           path: coverage
 
   ios-module-test:
-    name: ios module (build verification)
+    name: ios module (XCTest)
     needs: js-test
     runs-on: macos-15
     # `native-tests` environment must exist in repo settings with at
@@ -128,6 +128,13 @@ jobs:
         working-directory: example
         run: bunx expo prebuild --platform ios --clean --no-install
 
+      # Adds an ExpoAssistantTests target to the example xcodeproj AND
+      # appends a matching `target` block to the Podfile so CocoaPods
+      # installs the package's s.test_spec. See script for why this is
+      # needed (autolinked pods don't get their test_specs).
+      - name: Wire iOS test target
+        run: ruby scripts/add-ios-test-target.rb
+
       - name: Cache CocoaPods
         uses: actions/cache@v4
         with:
@@ -140,22 +147,24 @@ jobs:
         working-directory: example/ios
         run: pod install --repo-update
 
-      # NOTE: test EXECUTION is not yet wired. The Swift test file at
-      # ios/Tests/ExpoAssistantTests.swift exists and compiles under
-      # @testable import, but CocoaPods 1.16 + RN static_framework +
-      # s.test_spec do not produce a runnable test scheme. This job
-      # build-verifies the production module — catches the kind of
-      # malformed-AsyncFunction regression that silently shipped before.
-      - name: Build ExpoAssistant pod
+      - name: Run XCTest suite
         working-directory: example/ios
         run: |
-          xcodebuild build \
+          xcodebuild test \
             -workspace expoassistantexample.xcworkspace \
-            -scheme ExpoAssistant \
+            -scheme ExpoAssistant-Unit-Tests \
             -destination 'platform=iOS Simulator,name=iPhone 17' \
             -sdk iphonesimulator \
+            -resultBundlePath test-results.xcresult \
             CODE_SIGNING_ALLOWED=NO \
-            -quiet
+            | xcpretty
+
+      - name: Upload xcresult artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-test-result
+          path: example/ios/test-results.xcresult
 
   ios-e2e:
     name: ios example app e2e (skipped)

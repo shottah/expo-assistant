@@ -14,7 +14,7 @@ class ExpoAssistantModuleTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        module = ExpoAssistantModule()
+        module = ExpoAssistantModule(appContext: AppContext(config: nil))
         mockSpeechRecognizer = MockSpeechRecognizer()
         mockIntentHandler = MockIntentHandler()
         module.speechRecognizer = mockSpeechRecognizer

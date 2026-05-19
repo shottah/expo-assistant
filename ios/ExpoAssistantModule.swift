@@ -130,7 +130,7 @@ public class ExpoAssistantModule: Module {
 
     // MARK: - Internal Methods
 
-    private func initializeModule(config: [String: Any]?, completion: @escaping (Error?) -> Void) {
+    internal func initializeModule(config: [String: Any]?, completion: @escaping (Error?) -> Void) {
         if let config = config {
             self.config = VoiceAssistantConfig(from: config)
         }
@@ -177,19 +177,19 @@ public class ExpoAssistantModule: Module {
         completion(nil)
     }
 
-    private func donateIntentInternal(intentId: String, parameters: [String: Any], completion: @escaping (Error?) -> Void) {
+    internal func donateIntentInternal(intentId: String, parameters: [String: Any], completion: @escaping (Error?) -> Void) {
         intentHandler.donate(intentId: intentId, parameters: parameters, completion: completion)
     }
 
-    private func requestMicrophonePermissionInternal(completion: @escaping (PermissionStatus) -> Void) {
+    internal func requestMicrophonePermissionInternal(completion: @escaping (PermissionStatus) -> Void) {
         speechRecognizer.requestMicrophonePermission(completion: completion)
     }
 
-    private func requestSpeechRecognitionPermissionInternal(completion: @escaping (PermissionStatus) -> Void) {
+    internal func requestSpeechRecognitionPermissionInternal(completion: @escaping (PermissionStatus) -> Void) {
         speechRecognizer.requestSpeechPermission(completion: completion)
     }
 
-    private func checkCapabilitiesInternal(completion: @escaping ([String: Any]) -> Void) {
+    internal func checkCapabilitiesInternal(completion: @escaping ([String: Any]) -> Void) {
         var capabilities: [String: Any] = [:]
 
         var iosCapabilities: [String: Any] = [
