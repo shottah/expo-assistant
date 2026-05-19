@@ -153,30 +153,51 @@ function escapeSwift(s: string): string {
 }
 
 /**
- * Emits a Swift string literal for an AppShortcut phrase, converting the
- * `${applicationName}` placeholder to the literal Swift interpolation
- * `\(.applicationName)` that AppShortcutPhrase resolves at scan time.
+ * Emits a Swift string literal for an AppShortcut phrase, converting
+ * placeholders to the raw Swift interpolation that AppShortcutPhrase
+ * resolves at scan time:
  *
- * Apple requires every phrase to contain this token — without it linkd
- * logs `Skipping phrase missing an ${applicationName} token` and the
- * AppShortcut becomes invisible to Spotlight, Siri, and the long-press
- * shortcut suggestions. We throw at prebuild rather than emit a silently
- * broken provider.
+ *   ${applicationName} → \(.applicationName)   (required by Apple)
+ *   ${query}           → \(\.$query)           (parameter slot)
  *
- * The interpolation backslash must NOT pass through escapeSwift — it is
- * Swift compile-time syntax, not a runtime string character. So we split
- * the phrase on the placeholder, escape each plain-text segment, then
- * rejoin with the raw `\(.applicationName)` sequence.
+ * Apple requires every phrase to contain ${applicationName} — without
+ * it linkd logs `Skipping phrase missing an ${applicationName} token`
+ * and the AppShortcut becomes invisible to Spotlight, Siri, and the
+ * long-press shortcut suggestions. We throw at prebuild rather than
+ * emit a silently broken provider.
+ *
+ * ${query} is optional. When present, Siri extracts the query from the
+ * spoken phrase and the Shortcuts.app tap path triggers the
+ * GenericVoiceIntent.query needs-value flow (which speaks
+ * `requestValueDialog`). When absent, the shortcut runs with query=nil.
+ *
+ * Interpolation backslashes must NOT pass through escapeSwift — they
+ * are Swift compile-time syntax, not runtime string characters. We
+ * tokenize, escape only the plain-text segments, then rejoin with the
+ * raw interpolation sequences.
  */
 function buildPhraseLiteral(phrase: string, intentId: string): string {
-  const TOKEN = "${applicationName}";
-  if (!phrase.includes(TOKEN)) {
+  const APP_NAME_TOKEN = "${applicationName}";
+  if (!phrase.includes(APP_NAME_TOKEN)) {
     throw new Error(
-      `[expo-assistant] iOS AppShortcut phrase for "${intentId}" must contain "${TOKEN}" — got: ${JSON.stringify(phrase)}. Apple silently drops phrases missing this token.`
+      `[expo-assistant] iOS AppShortcut phrase for "${intentId}" must contain "${APP_NAME_TOKEN}" — got: ${JSON.stringify(phrase)}. Apple silently drops phrases missing this token.`
     );
   }
-  const segments = phrase.split(TOKEN).map(escapeSwift);
-  return `"${segments.join("\\(.applicationName)")}"`;
+  const TOKEN_RE = /\$\{(applicationName|query)\}/g;
+  const parts: string[] = [];
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+  while ((match = TOKEN_RE.exec(phrase)) !== null) {
+    parts.push(escapeSwift(phrase.slice(cursor, match.index)));
+    parts.push(
+      match[1] === "applicationName"
+        ? "\\(.applicationName)"
+        : "\\(\\.$query)"
+    );
+    cursor = match.index + match[0].length;
+  }
+  parts.push(escapeSwift(phrase.slice(cursor)));
+  return `"${parts.join("")}"`;
 }
 
 function setInfoPlist(

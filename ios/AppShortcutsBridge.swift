@@ -35,10 +35,28 @@ import AppIntents
 public struct GenericVoiceIntent: AppIntent {
     public static var title: LocalizedStringResource = "Voice Intent"
 
+    // Drives the Shortcuts.app editor preview AND the `needsValue` flow
+    // when an AppShortcut tile is tapped without a bound query.
+    // Without a parameterSummary that references $query, iOS treats the
+    // optional query as "not requested" and skips it silently — which is
+    // why tap-to-run produced nil before this was added.
+    public static var parameterSummary: some ParameterSummary {
+        Summary("Run \(\.$intentId)") {
+            \.$query
+        }
+    }
+
     @Parameter(title: "Intent ID")
     public var intentId: String
 
-    @Parameter(title: "Query")
+    // `requestValueDialog` is what iOS speaks (or shows) when it needs
+    // a value and has none — triggered when the phrase template includes
+    // \(\.$query) but the spoken phrase didn't fill it, OR when the
+    // AppShortcut tile is tapped from Library/Spotlight without binding.
+    @Parameter(
+        title: "Query",
+        requestValueDialog: "What would you like to search for?"
+    )
     public var query: String?
 
     public init() {}

@@ -488,6 +488,26 @@ describe("withExpoAssistant — iOS AppShortcuts codegen", () => {
     );
   });
 
+  it("translates ${query} into the raw Swift parameter interpolation", async () => {
+    await applyPlugin(baseConfig(), {
+      ios: {
+        appShortcuts: [
+          {
+            id: "search",
+            title: "Search",
+            phrases: ["Search ${applicationName} for ${query}"],
+          },
+        ],
+      },
+    }).runIosAppShortcutsCodegen(tmpRoot);
+
+    const swift = readGenerated();
+    // Both tokens must emit as unescaped Swift interpolation.
+    expect(swift).toContain(
+      'phrases: ["Search \\(.applicationName) for \\(\\.$query)"]'
+    );
+  });
+
   it("rejects AppShortcut phrases missing the ${applicationName} token", async () => {
     await expect(
       applyPlugin(baseConfig(), {
