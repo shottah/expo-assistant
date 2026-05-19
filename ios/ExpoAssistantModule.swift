@@ -256,10 +256,13 @@ public class ExpoAssistantModule: Module {
     }
 
     /// Convenience entry point for the AppShortcuts bridge: a voice trigger
-    /// fired `GenericVoiceIntent.perform()`, which calls this on the
-    /// singleton. We thin-wrap `emitEvent` so the bridge doesn't need to
-    /// know about `VoiceEventType` internals.
-    func emitIntent(id: String, parameters: [String: Any]) {
+    /// fired `GenericVoiceIntent.perform()` or a generated typed
+    /// `<Name>Intent.perform()` (post-#25), which calls this on the
+    /// singleton. `public` so generated AppIntent structs in the app
+    /// target — which live outside the pod's module boundary — can reach
+    /// it. We thin-wrap `emitEvent` so the bridge doesn't need to know
+    /// about `VoiceEventType` internals.
+    public func emitIntent(id: String, parameters: [String: Any]) {
         emitEvent(type: .intentInvoked, intentId: id, data: parameters)
     }
 }

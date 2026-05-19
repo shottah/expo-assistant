@@ -19,17 +19,20 @@ bun add expo-assistant
     "ios": { "bundleIdentifier": "com.example.myapp" },
     "plugins": [
       ["expo-assistant", {
-        "intents": ["search"],
+        "intents": ["productivity"],
         "ios": {
-          "siriUsageDescription": "Search the app via voice",
+          "siriUsageDescription": "Schedule events via voice",
           "appShortcuts": [{
-            "id": "search",
-            "title": "Search MyApp",
-            "systemImageName": "magnifyingglass",
+            "id": "create-event",
+            "title": "Create Event",
+            "systemImageName": "calendar.badge.plus",
             "phrases": [
-              "Search for ${query} in ${applicationName}",
-              "Search ${applicationName} for ${query}",
-              "Search ${applicationName}"
+              "Create event in ${applicationName}",
+              "Use ${applicationName} to create an event"
+            ],
+            "parameters": [
+              { "name": "title", "type": "string", "title": "Title", "prompt": "What's the event called?" },
+              { "name": "when",  "type": "string", "title": "When",  "prompt": "When?" }
             ]
           }]
         }
@@ -38,6 +41,8 @@ bun add expo-assistant
   }
 }
 ```
+
+One shortcut, two required parameters. iOS prompts the user for each one in turn when they invoke the shortcut without bound values. The JS handler receives a typed dict `{ title, when }`.
 
 ### Configuration reference
 
@@ -73,20 +78,30 @@ bun add expo-assistant
 |---|---|---|---|---|
 | `id` | `string` | **yes** | — | Routing key. Must equal the JS `withId(...)` value exactly (case-sensitive). Keep it `kebab-case` or `snake_case` to avoid Siri-rendered casing surprises. |
 | `title` | `string` | **yes** | — | Display label in Shortcuts.app Library, Spotlight, and the long-press app-icon menu. Short — 2-3 words ideal. |
-| `phrases` | `string[]` | recommended | `["${applicationName}"]` | Voice templates. Every entry **must** contain `${applicationName}`. May contain `${query}` to bind the spoken query into the handler. Declare 3-5 variants. If omitted, only the bare app-name phrase is available. |
+| `phrases` | `string[]` | recommended | `["${applicationName}"]` | Voice templates. Every entry **must** contain `${applicationName}`. Plugin throws at prebuild on any `${paramName}` slot because Apple only accepts AppEntity / AppEnum types as voice slots, never primitives — see #37 + Phrase rules below. Declare 3-5 variants. |
 | `systemImageName` | `string` | no | `"mic"` | SF Symbol name for the shortcut tile icon. Must match an existing SF Symbol (e.g. `"magnifyingglass"`, `"plus.circle"`, `"music.note"`). |
+| `parameters` | `AppShortcutParameter[]` | no | `undefined` | Declares typed parameters for this shortcut. When present, the plugin generates a dedicated typed AppIntent Swift struct (named `<PascalCaseId>Intent`); iOS prompts the user for each unbound parameter via `requestValueDialog` at tap time. When omitted, the shortcut routes through the generic `GenericVoiceIntent` with a single required `query: String` (back-compat). See next table. |
+
+#### `parameters[]` entry
+
+| Field | Type | Required | Default | Purpose |
+|---|---|---|---|---|
+| `name` | `string` | **yes** | — | Identifier. Becomes the Swift `@Parameter` property name AND the JS dict key the handler receives. Must be a valid identifier in both. |
+| `type` | `"string" \| "number" \| "boolean"` | **yes** | — | Swift type emitted (`String`, `Double`, `Bool`). Rich types (Date, Measurement, URL, IntentFile) tracked in #29; entity/enum types in #28. |
+| `title` | `string` | no | `name` capitalized | Display title used by `@Parameter(title:)`. |
+| `prompt` | `string` | no | `undefined` | Text iOS speaks/shows when the parameter is unbound at invocation time. Becomes `requestValueDialog`. If omitted, iOS uses its default phrasing. |
 
 #### Phrase template tokens
 
 | Token | Resolves to | Required in every phrase? |
 |---|---|---|
 | `${applicationName}` | Your app name (or any `alternativeAppNames` alias) | **yes** — iOS silently drops phrases without it |
-| `${query}` | Spoken query slot → bound to handler's `query` param | no — but if absent, iOS will prompt at runtime (query is required) |
+| `${paramName}` | Voice slot for a declared parameter | **not supported today** — Apple only accepts AppEntity / AppEnum types as phrase slots (#37). Plugin throws at prebuild. Use bare phrases + prompt path. |
 
 **Phrase rules — non-negotiable:**
 
 1. Every phrase **must** include `${applicationName}` somewhere. iOS silently drops phrases without it; the plugin throws at prebuild.
-2. `${query}` is a parameter slot. Voice ("Search for *tacos* in MyApp") binds `query="tacos"`. Bare phrases ("Search MyApp") trigger a `requestValueDialog` prompt at runtime because the package's `query` parameter is required.
+2. **No `${paramName}` slots today.** Apple's `AppShortcutPhrase` only accepts `AppEntity` or `AppEnum` types as voice slots ([DTS engineer ruling](https://developer.apple.com/forums/thread/770037)); primitives (string / number / boolean / date) are silently dropped by `linkd`. The plugin throws at prebuild rather than emit a phrase that won't work. Use bare phrases and rely on `requestValueDialog` prompts (declared via the parameter's `prompt` field). Voice-slot extraction unlocks once #28 (AppEntity) and #29 (AppEnum) land — tracked in #37.
 3. Declare 3–5 phrase variants per shortcut covering preposition swaps (`in`/`with`/`on`) and verb synonyms (`Search`/`Find`/`Look up`). iOS does not auto-synonymize connectors.
 4. Want a shorter spoken form? Add `ios.alternativeAppNames: ["MA", ...]` — iOS accepts any alias in the `${applicationName}` slot.
 
@@ -100,22 +115,30 @@ Generates `ios/<YourApp>/AppShortcutsBridge.generated.swift` and registers it in
 
 ## 3. Register a JS handler
 
+Register one `requiredParameter(...)` per parameter you declared in `app.json`. The handler receives a dict keyed by parameter name.
+
 ```ts
 import { VoiceAssistant, VoiceIntentBuilder, IntentCategory, ParameterType } from 'expo-assistant';
 
 const va = await VoiceAssistant.initialize({ debugMode: true });
 
 await va.registerIntent(
-  VoiceIntentBuilder.create<{ query: string }>()
-    .withId('search')  // case-sensitive; must equal app.json `id` exactly
-    .withCategory(IntentCategory.SEARCH)
-    .requiredParameter('query', { type: ParameterType.STRING })
+  VoiceIntentBuilder.create<{ title: string; when: string }>()
+    .withId('create-event')  // case-sensitive; must equal app.json `id` exactly
+    .withCategory(IntentCategory.PRODUCTIVITY)
+    .requiredParameter('title', { type: ParameterType.STRING })
+    .requiredParameter('when',  { type: ParameterType.STRING })
     .withHandler({
-      handle: async ({ query }) => ({ ok: true, hits: await doSearch(query) }),
+      handle: async ({ title, when }) => ({
+        ok: true,
+        scheduled: await scheduleEvent(title, when),
+      }),
     })
     .build()
 );
 ```
+
+**Critical:** `withId(...)` must equal the `id` field in `app.json` byte-for-byte. The JS dispatcher does a case-sensitive map lookup — `Search` ≠ `search`. Mismatch is silent (handler never fires).
 
 ## 4. Build + reinstall
 
@@ -133,11 +156,12 @@ xcrun simctl launch booted com.example.myapp
 
 | Path | Trigger | Behavior |
 |---|---|---|
-| Siri voice | "Search for *tacos* in MyApp" | Binds `query="tacos"`, fires handler |
-| Siri voice (bare) | "Search MyApp" | Prompts via `requestValueDialog`, then fires |
+| Siri voice | "Create event in MyApp" | Prompts via `requestValueDialog` for each unbound required parameter in turn, then fires |
 | Spotlight | swipe down, type phrase, tap tile | Same as Library tap |
-| Shortcuts.app → Library | tap auto-listed tile under your app | Prompts for unbound required params, fires |
+| Shortcuts.app → Library | tap auto-listed tile under your app | Prompts for unbound required params one at a time, then fires |
 | Long-press app icon | suggested actions menu | Same as Library tap |
+
+Note: voice-slot extraction (saying the parameter value as part of the phrase) is not supported today — see Phrase rules above and #37.
 
 Handler runs in your app's process — Expo runtime is up, no cold-start penalty if foregrounded or recent.
 
@@ -183,13 +207,17 @@ print(json.dumps(d.get('autoShortcuts', []), indent=2))
 ```
 
 Key things to check:
-- `parameters[query].isOptional: false` — required for prompts to work
-- `actionConfiguration.actionSummary.summaryString.parameterIdentifiers` lists `query`
-- `autoShortcuts[].phraseTemplates[].key` shows your `${applicationName}` / `${query}` tokens
+- For each declared parameter on a typed intent: `parameters[<name>].isOptional: false` — required for prompts to work
+- For the legacy `GenericVoiceIntent` (back-compat path), `parameters[query].isOptional: false`
+- `actionConfiguration.actionSummary.summaryString.parameterIdentifiers` lists every declared parameter
+- `autoShortcuts[].phraseTemplates[].key` shows your phrases with the literal `${applicationName}` token
 
 ## 10. Current limits
 
-- **One free-form parameter per invocation.** All shortcuts route through a shared `GenericVoiceIntent` with a single `query: String` slot. Phrases like "Send `${amount}` to `${recipient}` in MyApp" are not expressible today — tracked in #25.
+- **No voice slots for parameters.** Apple only accepts `AppEntity` / `AppEnum` as `AppShortcutPhrase` slots; primitives (`string`, `number`, `boolean`, `Date`, etc.) are silently dropped by `linkd`. Users hit the prompt path instead. Tracked in #37 + unblocked by #28 (entities) / #29 (enums).
+- **No rich primitive types yet** — only `string`, `number`, `boolean` parameters today. Date, Measurement, URL, IntentFile in #29.
+- **No entities** — no autocomplete or disambiguation against app data. #28.
+- **No Apple Intelligence schema conformance** — custom AppIntent only. #30 (blocked on #35 research).
+- **No result presentation surfaces** — no `ProvidesDialog` / `ShowsSnippetView` / `OpensIntent` / `ReturnsValue`. #31.
 - **~10 AppShortcuts per app**, ~5–10 phrases per shortcut (Apple's practical budget).
-- **No typed params, entities, enums, dialogs, or disambiguation flows** — see #19 and #25 for upgrade paths.
-- **Simulator has no Siri voice.** Voice extraction can only be confirmed on a physical device.
+- **Simulator has no Siri voice.** Voice phrasing can only be confirmed on a physical device.
