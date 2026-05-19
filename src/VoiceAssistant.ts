@@ -1,3 +1,4 @@
+import ExpoAssistantModule from "./ExpoAssistantModule";
 import {
   VoiceIntent,
   VoiceAssistantConfig,
@@ -6,9 +7,8 @@ import {
   IntentRegistration,
   VoiceEvent,
   VoiceEventListener,
-  IntentResponse
-} from './types/VoiceAssistant.types';
-import ExpoAssistantModule from './ExpoAssistantModule';
+  IntentResponse,
+} from "./types/VoiceAssistant.types";
 
 export class VoiceAssistant {
   private static instance: VoiceAssistant | null = null;
@@ -23,7 +23,9 @@ export class VoiceAssistant {
     }
   }
 
-  static async initialize(config?: VoiceAssistantConfig): Promise<VoiceAssistant> {
+  static async initialize(
+    config?: VoiceAssistantConfig
+  ): Promise<VoiceAssistant> {
     if (!VoiceAssistant.instance) {
       VoiceAssistant.instance = new VoiceAssistant(config);
       await VoiceAssistant.instance.setup();
@@ -37,15 +39,24 @@ export class VoiceAssistant {
       this.setupEventListeners();
       this.initialized = true;
     } catch (error) {
-      console.error('Failed to initialize VoiceAssistant:', error);
+      console.error("Failed to initialize VoiceAssistant:", error);
       throw error;
     }
   }
 
   private setupEventListeners(): void {
-    ExpoAssistantModule.addListener('onIntentReceived', this.handleIntentReceived.bind(this));
-    ExpoAssistantModule.addListener('onIntentCompleted', this.handleIntentCompleted.bind(this));
-    ExpoAssistantModule.addListener('onIntentFailed', this.handleIntentFailed.bind(this));
+    ExpoAssistantModule.addListener(
+      "onIntentReceived",
+      this.handleIntentReceived.bind(this)
+    );
+    ExpoAssistantModule.addListener(
+      "onIntentCompleted",
+      this.handleIntentCompleted.bind(this)
+    );
+    ExpoAssistantModule.addListener(
+      "onIntentFailed",
+      this.handleIntentFailed.bind(this)
+    );
   }
 
   private handleIntentReceived(event: any): void {
@@ -54,35 +65,35 @@ export class VoiceAssistant {
 
     if (registration && registration.enabled !== false) {
       this.emitEvent({
-        type: 'onIntentReceived',
+        type: "onIntentReceived",
         intentId,
         data: event.data,
-        timestamp: new Date()
+        timestamp: new Date(),
       });
     }
   }
 
   private handleIntentCompleted(event: any): void {
     this.emitEvent({
-      type: 'onIntentCompleted',
+      type: "onIntentCompleted",
       intentId: event.intentId,
       data: event.data,
-      timestamp: new Date()
+      timestamp: new Date(),
     });
   }
 
   private handleIntentFailed(event: any): void {
     this.emitEvent({
-      type: 'onIntentFailed',
+      type: "onIntentFailed",
       intentId: event.intentId,
       error: event.error,
-      timestamp: new Date()
+      timestamp: new Date(),
     });
   }
 
   private emitEvent(event: VoiceEvent): void {
     const listeners = this.eventListeners.get(event.type) || [];
-    listeners.forEach(listener => listener(event));
+    listeners.forEach((listener) => listener(event));
   }
 
   async registerIntent<TParams = any, TResponse = any>(
@@ -90,13 +101,13 @@ export class VoiceAssistant {
     options?: { priority?: number; enabled?: boolean }
   ): Promise<void> {
     if (!this.initialized) {
-      throw new Error('VoiceAssistant not initialized');
+      throw new Error("VoiceAssistant not initialized");
     }
 
     const registration: IntentRegistration = {
       intent: intent as VoiceIntent,
       priority: options?.priority || 0,
-      enabled: options?.enabled !== false
+      enabled: options?.enabled !== false,
     };
 
     this.registeredIntents.set(intent.id, registration);
@@ -106,7 +117,7 @@ export class VoiceAssistant {
         id: intent.id,
         category: intent.category,
         parameters: intent.parameters,
-        platforms: intent.platforms
+        platforms: intent.platforms,
       });
     } catch (error) {
       this.registeredIntents.delete(intent.id);
@@ -129,7 +140,10 @@ export class VoiceAssistant {
     this.registeredIntents.delete(intentId);
   }
 
-  async donateIntent(intentId: string, parameters: Record<string, any>): Promise<void> {
+  async donateIntent(
+    intentId: string,
+    parameters: Record<string, any>
+  ): Promise<void> {
     if (!this.registeredIntents.has(intentId)) {
       throw new Error(`Intent ${intentId} not registered`);
     }
@@ -155,12 +169,16 @@ export class VoiceAssistant {
       let resolvedParams = parameters;
       if (intent.handler.resolve) {
         const resolved = await intent.handler.resolve(parameters);
-        if (resolved && typeof resolved === 'object' && 'needsValue' in resolved) {
+        if (
+          resolved &&
+          typeof resolved === "object" &&
+          "needsValue" in resolved
+        ) {
           const disambiguationResult = resolved as { needsValue: string };
           return {
             success: false,
             needsDisambiguation: true,
-            message: `Need value for: ${disambiguationResult.needsValue}`
+            message: `Need value for: ${disambiguationResult.needsValue}`,
           };
         }
         resolvedParams = resolved as TParams;
@@ -170,7 +188,7 @@ export class VoiceAssistant {
 
       return {
         success: true,
-        data: result
+        data: result,
       };
     } catch (error) {
       if (intent.handler.onError) {
@@ -178,13 +196,13 @@ export class VoiceAssistant {
         return {
           success: false,
           data: errorResult,
-          error: (error as Error).message
+          error: (error as Error).message,
         };
       }
 
       return {
         success: false,
-        error: (error as Error).message
+        error: (error as Error).message,
       };
     }
   }
@@ -197,7 +215,7 @@ export class VoiceAssistant {
       platform,
       locale,
       sessionId: this.generateSessionId(),
-      timestamp: new Date()
+      timestamp: new Date(),
     };
   }
 
@@ -241,7 +259,10 @@ export class VoiceAssistant {
     await ExpoAssistantModule.enableCustomUI();
   }
 
-  addEventListener(event: VoiceEvent['type'], listener: VoiceEventListener): () => void {
+  addEventListener(
+    event: VoiceEvent["type"],
+    listener: VoiceEventListener
+  ): () => void {
     if (!this.eventListeners.has(event)) {
       this.eventListeners.set(event, []);
     }
@@ -257,7 +278,10 @@ export class VoiceAssistant {
     };
   }
 
-  removeEventListener(event: VoiceEvent['type'], listener: VoiceEventListener): void {
+  removeEventListener(
+    event: VoiceEvent["type"],
+    listener: VoiceEventListener
+  ): void {
     const listeners = this.eventListeners.get(event);
     if (listeners) {
       const index = listeners.indexOf(listener);

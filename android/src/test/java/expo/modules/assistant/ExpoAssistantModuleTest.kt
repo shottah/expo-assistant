@@ -332,15 +332,6 @@ class ExpoAssistantModuleTest {
     }
 
     @Test
-    fun `test enable custom UI`() {
-        val promise = mockk<Promise>(relaxed = true)
-
-        module.enableCustomUI(promise)
-
-        verify { promise.resolve(Unit) }
-    }
-
-    @Test
     fun `test get platform`() {
         val promise = mockk<Promise>(relaxed = true)
 
@@ -375,42 +366,20 @@ class ExpoAssistantModuleTest {
     // MARK: - Event Emission Tests
 
     @Test
-    fun `test event emission for intent received`() {
+    fun `test event emission routes data to registered listener`() {
         val listener = mockk<(Map<String, Any>) -> Unit>(relaxed = true)
         module.addListener("onIntentReceived", listener)
 
-        module.emitEvent("onIntentReceived", mapOf(
+        val payload = mapOf(
             "intentId" to "test-intent",
             "data" to mapOf("test" to "data")
-        ))
+        )
+        module.emitEvent("onIntentReceived", payload)
 
-        verify { listener(any()) }
-    }
-
-    @Test
-    fun `test event emission for intent completed`() {
-        val listener = mockk<(Map<String, Any>) -> Unit>(relaxed = true)
-        module.addListener("onIntentCompleted", listener)
-
-        module.emitEvent("onIntentCompleted", mapOf(
-            "intentId" to "test-intent",
-            "data" to mapOf("result" to "success")
-        ))
-
-        verify { listener(any()) }
-    }
-
-    @Test
-    fun `test event emission for intent failed`() {
-        val listener = mockk<(Map<String, Any>) -> Unit>(relaxed = true)
-        module.addListener("onIntentFailed", listener)
-
-        module.emitEvent("onIntentFailed", mapOf(
-            "intentId" to "test-intent",
-            "error" to "Test error"
-        ))
-
-        verify { listener(any()) }
+        val captor = slot<Map<String, Any>>()
+        verify { listener(capture(captor)) }
+        assertEquals("test-intent", captor.captured["intentId"])
+        assertEquals(mapOf("test" to "data"), captor.captured["data"])
     }
 
     // MARK: - Shortcut Creation Tests

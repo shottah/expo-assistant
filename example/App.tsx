@@ -1,73 +1,73 @@
-import { useEvent } from 'expo';
-import ExpoAssistant, { ExpoAssistantView } from 'expo-assistant';
-import { Button, SafeAreaView, ScrollView, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Button, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import {
+  IntentCategory,
+  ParameterType,
+  VoiceAssistant,
+  VoiceIntentBuilder,
+} from 'expo-assistant';
 
 export default function App() {
-  const onChangePayload = useEvent(ExpoAssistant, 'onChange');
+  const [status, setStatus] = useState('idle');
+  const assistantRef = useRef<VoiceAssistant | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const va = await VoiceAssistant.initialize({ debugMode: true });
+        assistantRef.current = va;
+        const intent = VoiceIntentBuilder.create<{ query: string }>()
+          .withId('search')
+          .withCategory(IntentCategory.SEARCH)
+          .requiredParameter('query', { type: ParameterType.STRING })
+          .withHandler({
+            handle: async ({ query }) => {
+              setStatus(`got query: ${query}`);
+              return { ok: true };
+            },
+          })
+          .build();
+        await va.registerIntent(intent);
+        setStatus('registered');
+      } catch (e: any) {
+        setStatus(`error: ${e?.message ?? String(e)}`);
+      }
+    })();
+  }, []);
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.container}>
-        <Text style={styles.header}>Module API Example</Text>
-        <Group name="Constants">
-          <Text>{ExpoAssistant.PI}</Text>
-        </Group>
-        <Group name="Functions">
-          <Text>{ExpoAssistant.hello()}</Text>
-        </Group>
-        <Group name="Async functions">
-          <Button
-            title="Set value"
-            onPress={async () => {
-              await ExpoAssistant.setValueAsync('Hello from JS!');
-            }}
-          />
-        </Group>
-        <Group name="Events">
-          <Text>{onChangePayload?.value}</Text>
-        </Group>
-        <Group name="Views">
-          <ExpoAssistantView
-            url="https://www.example.com"
-            onLoad={({ nativeEvent: { url } }) => console.log(`Loaded: ${url}`)}
-            style={styles.view}
-          />
-        </Group>
-      </ScrollView>
+      <View style={styles.inner}>
+        <Text style={styles.header}>expo-assistant example</Text>
+        <Text testID="status" style={styles.status}>
+          {status}
+        </Text>
+        <Button
+          testID="donate"
+          title="Donate search intent"
+          onPress={() => {
+            assistantRef.current
+              ?.donateIntent('search', { query: 'maestro' })
+              .then(() => setStatus('donated'))
+              .catch((e: any) =>
+                setStatus(`donate error: ${e?.message ?? String(e)}`)
+              );
+          }}
+        />
+      </View>
     </SafeAreaView>
   );
 }
 
-function Group(props: { name: string; children: React.ReactNode }) {
-  return (
-    <View style={styles.group}>
-      <Text style={styles.groupHeader}>{props.name}</Text>
-      {props.children}
-    </View>
-  );
-}
-
-const styles = {
-  header: {
-    fontSize: 30,
-    margin: 20,
-  },
-  groupHeader: {
-    fontSize: 20,
-    marginBottom: 20,
-  },
-  group: {
-    margin: 20,
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 20,
-  },
-  container: {
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#fff' },
+  inner: {
     flex: 1,
-    backgroundColor: '#eee',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 24,
+    padding: 24,
   },
-  view: {
-    flex: 1,
-    height: 200,
-  },
-};
+  header: { fontSize: 24, fontWeight: '600' },
+  status: { fontSize: 16, color: '#444' },
+});

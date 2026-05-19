@@ -4,11 +4,14 @@ import {
   VoiceParameter,
   IntentHandler,
   ParameterConfig,
-  AndroidParameter
-} from '../types/VoiceAssistant.types';
+  AndroidParameter,
+} from "../types/VoiceAssistant.types";
 
-export class VoiceIntentBuilder<TParams = {}, TBuilt extends keyof TParams = never> {
-  private id: string = '';
+export class VoiceIntentBuilder<
+  TParams = {},
+  TBuilt extends keyof TParams = never
+> {
+  private id: string = "";
   private category: IntentCategory = IntentCategory.CUSTOM;
   private parameters: VoiceParameter[] = [];
   private handler?: IntentHandler<any, any>;
@@ -22,7 +25,7 @@ export class VoiceIntentBuilder<TParams = {}, TBuilt extends keyof TParams = nev
     biiCategory?: string;
     capability: string;
     parameters: AndroidParameter[];
-    fulfillment?: 'INLINE' | 'DEFERRED';
+    fulfillment?: "INLINE" | "DEFERRED";
   };
 
   static create<T = {}>(): VoiceIntentBuilder<T, never> {
@@ -50,7 +53,7 @@ export class VoiceIntentBuilder<TParams = {}, TBuilt extends keyof TParams = nev
       defaultValue: config.defaultValue,
       prompt: config.prompt,
       choices: config.choices as string[],
-      parser: config.parser
+      parser: config.parser,
     };
 
     this.parameters.push(parameter);
@@ -59,16 +62,19 @@ export class VoiceIntentBuilder<TParams = {}, TBuilt extends keyof TParams = nev
 
   requiredParameter<K extends string, V>(
     name: K,
-    config: Omit<ParameterConfig<V>, 'required'>
+    config: Omit<ParameterConfig<V>, "required">
   ): VoiceIntentBuilder<TParams & Record<K, V>, TBuilt | K> {
     return this.parameter(name, { ...config, required: true });
   }
 
   optionalParameter<K extends string, V>(
     name: K,
-    config: Omit<ParameterConfig<V>, 'required'>
+    config: Omit<ParameterConfig<V>, "required">
   ): VoiceIntentBuilder<TParams & Partial<Record<K, V>>, TBuilt | K> {
-    const newBuilder = new VoiceIntentBuilder<TParams & Partial<Record<K, V>>, TBuilt | K>();
+    const newBuilder = new VoiceIntentBuilder<
+      TParams & Partial<Record<K, V>>,
+      TBuilt | K
+    >();
     Object.assign(newBuilder, this);
     const parameter: VoiceParameter = {
       name,
@@ -77,13 +83,15 @@ export class VoiceIntentBuilder<TParams = {}, TBuilt extends keyof TParams = nev
       defaultValue: config.defaultValue,
       prompt: config.prompt,
       choices: config.choices as string[] | undefined,
-      parser: config.parser
+      parser: config.parser,
     };
     newBuilder.parameters.push(parameter);
     return newBuilder;
   }
 
-  withHandler<R>(handler: IntentHandler<TParams, R>): VoiceIntentFinal<TParams, R> {
+  withHandler<R>(
+    handler: IntentHandler<TParams, R>
+  ): VoiceIntentFinal<TParams, R> {
     this.handler = handler;
     return new VoiceIntentFinal(this as any);
   }
@@ -95,7 +103,9 @@ export class VoiceIntentBuilder<TParams = {}, TBuilt extends keyof TParams = nev
     return this;
   }
 
-  configureAndroid(configurator: (android: AndroidConfigurator) => AndroidConfigurator): this {
+  configureAndroid(
+    configurator: (android: AndroidConfigurator) => AndroidConfigurator
+  ): this {
     const androidConfigurator = new AndroidConfigurator();
     const configured = configurator(androidConfigurator);
     this.androidConfig = configured.build();
@@ -104,10 +114,10 @@ export class VoiceIntentBuilder<TParams = {}, TBuilt extends keyof TParams = nev
 
   build(): VoiceIntent<TParams, any> {
     if (!this.id) {
-      throw new Error('Intent ID is required');
+      throw new Error("Intent ID is required");
     }
     if (!this.handler) {
-      throw new Error('Intent handler is required');
+      throw new Error("Intent handler is required");
     }
 
     return {
@@ -117,8 +127,8 @@ export class VoiceIntentBuilder<TParams = {}, TBuilt extends keyof TParams = nev
       handler: this.handler,
       platforms: {
         ios: this.iosConfig,
-        android: this.androidConfig
-      }
+        android: this.androidConfig,
+      },
     };
   }
 }
@@ -131,20 +141,26 @@ export class VoiceIntentFinal<TParams, TResponse> {
     return this;
   }
 
-  configureAndroid(configurator: (android: AndroidConfigurator) => AndroidConfigurator): this {
+  configureAndroid(
+    configurator: (android: AndroidConfigurator) => AndroidConfigurator
+  ): this {
     this.builder.configureAndroid(configurator);
     return this;
   }
 
   withBackgroundExecution(): this {
-    this.builder.configureIOS(ios => ios.withBackgroundExecution());
-    this.builder.configureAndroid(android => android.withDeferredFulfillment());
+    this.builder.configureIOS((ios) => ios.withBackgroundExecution());
+    this.builder.configureAndroid((android) =>
+      android.withDeferredFulfillment()
+    );
     return this;
   }
 
   withMediaSessionIntegration(): this {
-    this.builder.configureIOS(ios => ios.withMediaSessionSupport());
-    this.builder.configureAndroid(android => android.withMediaSessionSupport());
+    this.builder.configureIOS((ios) => ios.withMediaSessionSupport());
+    this.builder.configureAndroid((android) =>
+      android.withMediaSessionSupport()
+    );
     return this;
   }
 
@@ -177,17 +193,17 @@ export class IOSConfigurator {
   }
 
   withHealthKitIntegration(): this {
-    this.config.siriKitDomain = 'INWorkoutsDomain';
+    this.config.siriKitDomain = "INWorkoutsDomain";
     return this;
   }
 
   withCallKitSupport(): this {
-    this.config.siriKitDomain = 'INStartAudioCallIntent';
+    this.config.siriKitDomain = "INStartAudioCallIntent";
     return this;
   }
 
   withMediaSessionSupport(): this {
-    this.config.siriKitDomain = 'INPlayMediaIntent';
+    this.config.siriKitDomain = "INPlayMediaIntent";
     return this;
   }
 
@@ -211,8 +227,8 @@ export class AndroidConfigurator {
     biiCategory?: string;
     capability: string;
     parameters: AndroidParameter[];
-    fulfillment?: 'INLINE' | 'DEFERRED';
-  } = { capability: '', parameters: [] };
+    fulfillment?: "INLINE" | "DEFERRED";
+  } = { capability: "", parameters: [] };
 
   withBiiCategory(category: string): this {
     this.config.biiCategory = category;
@@ -230,12 +246,12 @@ export class AndroidConfigurator {
   }
 
   withGoogleFitIntegration(): this {
-    this.config.biiCategory = 'Health & Fitness';
+    this.config.biiCategory = "Health & Fitness";
     return this;
   }
 
   withMediaSessionSupport(): this {
-    this.config.capability = 'actions.intent.PLAY_MEDIA';
+    this.config.capability = "actions.intent.PLAY_MEDIA";
     return this;
   }
 
@@ -244,7 +260,7 @@ export class AndroidConfigurator {
   }
 
   withDeferredFulfillment(): this {
-    this.config.fulfillment = 'DEFERRED';
+    this.config.fulfillment = "DEFERRED";
     return this;
   }
 

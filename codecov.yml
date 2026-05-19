@@ -29,3 +29,7 @@ flags:
     paths:
       - android/src/main/
     carryforward: true
+  ios:
+    paths:
+      - ios/
+    carryforward: true
