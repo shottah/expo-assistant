@@ -32,19 +32,33 @@
       [
         "expo-assistant",
         {
-          "intents": ["search"],
+          "intents": ["productivity"],
           "ios": {
-            "siriUsageDescription": "Search the example app via voice",
+            "siriUsageDescription": "Schedule events via voice",
             "appShortcuts": [
               {
-                "id": "search",
-                "title": "Search Example",
+                "id": "create-event",
+                "title": "Create Event",
+                "systemImageName": "calendar.badge.plus",
                 "phrases": [
-                "Search for ${query} in ${applicationName}",
-                "Search ${applicationName} for ${query}",
-                "Search ${applicationName}"
-              ],
-                "systemImageName": "magnifyingglass"
+                  "Create event in ${applicationName}",
+                  "Use ${applicationName} to create an event",
+                  "New event in ${applicationName}"
+                ],
+                "parameters": [
+                  {
+                    "name": "title",
+                    "type": "string",
+                    "title": "Title",
+                    "prompt": "What's the event called?"
+                  },
+                  {
+                    "name": "when",
+                    "type": "string",
+                    "title": "When",
+                    "prompt": "When? (e.g. tomorrow at 9am)"
+                  }
+                ]
               }
             ]
           }

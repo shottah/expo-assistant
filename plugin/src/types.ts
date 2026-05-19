@@ -14,6 +14,22 @@ export enum IntentCategory {
   CUSTOM = "custom",
 }
 
+/**
+ * One declared parameter on an AppShortcut. The plugin uses this to
+ * generate a per-shortcut typed AppIntent Swift struct with a matching
+ * `@Parameter` property.
+ */
+export interface AppShortcutParameter {
+  /** Identifier used as the Swift property name AND the JS dict key the handler receives. Must be a valid identifier in both. */
+  name: string;
+  /** Initial supported primitive types. Entity/enum types are #28/#29. */
+  type: "string" | "number" | "boolean";
+  /** Display title used by `@Parameter(title:)`. Defaults to `name` capitalized. */
+  title?: string;
+  /** Prompt text iOS speaks/shows when the parameter is unbound at invocation time. Used as `requestValueDialog`. */
+  prompt?: string;
+}
+
 export interface ExpoAssistantPluginConfig {
   // Core Features
   enableSiriKit?: boolean;
@@ -52,6 +68,28 @@ export interface ExpoAssistantPluginConfig {
       title: string;
       phrases?: string[];
       systemImageName?: string;
+      /**
+       * Declared parameters for the shortcut. When present, the plugin
+       * generates a dedicated typed AppIntent Swift struct for this
+       * shortcut (instead of routing through the shared
+       * GenericVoiceIntent). Each parameter becomes an `@Parameter` on
+       * the generated struct; when iOS invokes the shortcut without a
+       * bound value, the system prompts the user via `requestValueDialog`
+       * (sourced from `prompt`).
+       *
+       * If omitted, the shortcut continues to route through
+       * GenericVoiceIntent for backwards compatibility — a single
+       * required `query: String` parameter prompted at runtime.
+       *
+       * Per Apple's AppShortcutPhrase constraint (see issue #37 +
+       * https://developer.apple.com/forums/thread/770037), primitive
+       * parameter values (`string`, `number`, `boolean`) CANNOT appear
+       * as voice phrase slots — they are only fillable via the
+       * `requestValueDialog` prompt or via the Shortcuts editor. The
+       * plugin throws at prebuild if a phrase template references a
+       * primitive parameter via `${paramName}`.
+       */
+      parameters?: AppShortcutParameter[];
     }[];
   };
 

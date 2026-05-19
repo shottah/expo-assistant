@@ -488,24 +488,23 @@ describe("withExpoAssistant — iOS AppShortcuts codegen", () => {
     );
   });
 
-  it("translates ${query} into the raw Swift parameter interpolation", async () => {
-    await applyPlugin(baseConfig(), {
-      ios: {
-        appShortcuts: [
-          {
-            id: "search",
-            title: "Search",
-            phrases: ["Search ${applicationName} for ${query}"],
-          },
-        ],
-      },
-    }).runIosAppShortcutsCodegen(tmpRoot);
-
-    const swift = readGenerated();
-    // Both tokens must emit as unescaped Swift interpolation.
-    expect(swift).toContain(
-      'phrases: ["Search \\(.applicationName) for \\(\\.$query)"]'
-    );
+  it("rejects ${query} (and any primitive slot) with a clear error pointing at #37", async () => {
+    // Apple's AppShortcutPhrase only accepts AppEntity / AppEnum as voice
+    // slots; primitives are silently dropped by linkd. We surface this at
+    // prebuild instead of letting linkd drop the phrase at install time.
+    await expect(
+      applyPlugin(baseConfig(), {
+        ios: {
+          appShortcuts: [
+            {
+              id: "search",
+              title: "Search",
+              phrases: ["Search ${applicationName} for ${query}"],
+            },
+          ],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot)
+    ).rejects.toThrow(/voice slots only work for AppEntity \/ AppEnum/);
   });
 
   it("rejects AppShortcut phrases missing the ${applicationName} token", async () => {
@@ -522,5 +521,224 @@ describe("withExpoAssistant — iOS AppShortcuts codegen", () => {
         },
       }).runIosAppShortcutsCodegen(tmpRoot)
     ).rejects.toThrow(/must contain "\$\{applicationName\}"/);
+  });
+
+  // ── Typed multi-parameter intents (#25) ──────────────────────────────
+
+  it("generates a dedicated typed AppIntent struct per shortcut with declared parameters", async () => {
+    await applyPlugin(baseConfig(), {
+      ios: {
+        appShortcuts: [
+          {
+            id: "create-event",
+            title: "Create Event",
+            phrases: ["Create event in ${applicationName}"],
+            parameters: [
+              {
+                name: "title",
+                type: "string",
+                title: "Title",
+                prompt: "What is the event called?",
+              },
+              {
+                name: "when",
+                type: "string",
+                title: "When",
+                prompt: "When?",
+              },
+            ],
+          },
+        ],
+      },
+    }).runIosAppShortcutsCodegen(tmpRoot);
+
+    const swift = readGenerated();
+
+    // A typed struct is emitted with PascalCase-derived name.
+    expect(swift).toContain(
+      "public struct CreateEventIntent: AppIntent"
+    );
+
+    // Each declared parameter becomes an @Parameter with title +
+    // requestValueDialog.
+    expect(swift).toContain('title: "Title"');
+    expect(swift).toContain(
+      'requestValueDialog: "What is the event called?"'
+    );
+    expect(swift).toContain("public var title: String");
+    expect(swift).toContain('title: "When"');
+    expect(swift).toContain('requestValueDialog: "When?"');
+    expect(swift).toContain("public var when: String");
+
+    // parameterSummary references every declared parameter so iOS's
+    // needs-value flow walks the user through each unbound value.
+    expect(swift).toContain(
+      'Summary("Create Event \\(\\.$title) \\(\\.$when)")'
+    );
+
+    // perform() marshals the full dict back through emitIntent.
+    expect(swift).toContain('id: "create-event"');
+    expect(swift).toContain('"title": title');
+    expect(swift).toContain('"when": when');
+
+    // AppShortcut binds the new typed intent (no GenericVoiceIntent here).
+    expect(swift).toContain("intent: CreateEventIntent()");
+    expect(swift).not.toContain(
+      'GenericVoiceIntent(intentId: "create-event")'
+    );
+  });
+
+  it("falls back to GenericVoiceIntent for shortcuts without declared parameters", async () => {
+    await applyPlugin(baseConfig(), {
+      ios: {
+        appShortcuts: [
+          {
+            id: "legacy",
+            title: "Legacy",
+            phrases: ["Run legacy in ${applicationName}"],
+          },
+        ],
+      },
+    }).runIosAppShortcutsCodegen(tmpRoot);
+
+    const swift = readGenerated();
+    expect(swift).toContain('GenericVoiceIntent(intentId: "legacy")');
+    // No typed struct generated when no parameters declared.
+    expect(swift).not.toContain("public struct LegacyIntent: AppIntent");
+  });
+
+  it("emits typed and legacy shortcuts side by side", async () => {
+    await applyPlugin(baseConfig(), {
+      ios: {
+        appShortcuts: [
+          {
+            id: "legacy",
+            title: "Legacy",
+            phrases: ["Run legacy in ${applicationName}"],
+          },
+          {
+            id: "typed",
+            title: "Typed",
+            phrases: ["Run typed in ${applicationName}"],
+            parameters: [{ name: "amount", type: "number" }],
+          },
+        ],
+      },
+    }).runIosAppShortcutsCodegen(tmpRoot);
+
+    const swift = readGenerated();
+    expect(swift).toContain('GenericVoiceIntent(intentId: "legacy")');
+    expect(swift).toContain("intent: TypedIntent()");
+    expect(swift).toContain("public struct TypedIntent: AppIntent");
+    expect(swift).toContain("public var amount: Double");
+  });
+
+  it("maps parameter types to Swift primitives correctly", async () => {
+    await applyPlugin(baseConfig(), {
+      ios: {
+        appShortcuts: [
+          {
+            id: "mixed",
+            title: "Mixed",
+            phrases: ["Mixed in ${applicationName}"],
+            parameters: [
+              { name: "label", type: "string" },
+              { name: "count", type: "number" },
+              { name: "active", type: "boolean" },
+            ],
+          },
+        ],
+      },
+    }).runIosAppShortcutsCodegen(tmpRoot);
+
+    const swift = readGenerated();
+    expect(swift).toContain("public var label: String");
+    expect(swift).toContain("public var count: Double");
+    expect(swift).toContain("public var active: Bool");
+  });
+
+  it("derives the Swift struct name from various id casings", async () => {
+    await applyPlugin(baseConfig(), {
+      ios: {
+        appShortcuts: [
+          {
+            id: "kebab-case-id",
+            title: "K",
+            parameters: [{ name: "x", type: "string" }],
+          },
+          {
+            id: "snake_case_id",
+            title: "S",
+            parameters: [{ name: "x", type: "string" }],
+          },
+          {
+            id: "camelCaseId",
+            title: "C",
+            parameters: [{ name: "x", type: "string" }],
+          },
+        ],
+      },
+    }).runIosAppShortcutsCodegen(tmpRoot);
+
+    const swift = readGenerated();
+    expect(swift).toContain("public struct KebabCaseIdIntent: AppIntent");
+    expect(swift).toContain("public struct SnakeCaseIdIntent: AppIntent");
+    expect(swift).toContain("public struct CamelCaseIdIntent: AppIntent");
+  });
+
+  it("rejects ${name} slots that reference declared primitive params (per #37)", async () => {
+    await expect(
+      applyPlugin(baseConfig(), {
+        ios: {
+          appShortcuts: [
+            {
+              id: "create-event",
+              title: "Create Event",
+              phrases: [
+                "Create event ${title} in ${applicationName}",
+              ],
+              parameters: [{ name: "title", type: "string" }],
+            },
+          ],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot)
+    ).rejects.toThrow(
+      /primitive-typed parameter[\s\S]+AppShortcutPhrase only accepts AppEntity \/ AppEnum/
+    );
+  });
+
+  it("uses prompt-free @Parameter when prompt is omitted", async () => {
+    await applyPlugin(baseConfig(), {
+      ios: {
+        appShortcuts: [
+          {
+            id: "no-prompt",
+            title: "NP",
+            parameters: [{ name: "x", type: "string", title: "X" }],
+          },
+        ],
+      },
+    }).runIosAppShortcutsCodegen(tmpRoot);
+
+    const swift = readGenerated();
+    expect(swift).toContain('title: "X"');
+    expect(swift).not.toContain("requestValueDialog:");
+  });
+
+  it("defaults @Parameter title to the capitalized parameter name when title is omitted", async () => {
+    await applyPlugin(baseConfig(), {
+      ios: {
+        appShortcuts: [
+          {
+            id: "default-title",
+            title: "DT",
+            parameters: [{ name: "amount", type: "number" }],
+          },
+        ],
+      },
+    }).runIosAppShortcutsCodegen(tmpRoot);
+
+    const swift = readGenerated();
+    expect(swift).toContain('title: "Amount"');
   });
 });
