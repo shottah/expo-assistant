@@ -26,7 +26,12 @@ bunx expo prebuild --platform ios --clean --no-install
 
 cd "$REPO_ROOT"
 echo "→ wiring test target"
-ruby scripts/add-ios-test-target.rb
+# xcodeproj gem ships bundled inside the CocoaPods install (its own
+# isolated GEM_HOME) — point system ruby at it for THIS invocation only,
+# so `require 'xcodeproj'` works. Don't export, or it'll leak into
+# pod install's own gem resolution and break it.
+COCOAPODS_LIBEXEC="$(brew --prefix cocoapods 2>/dev/null || true)/libexec"
+GEM_PATH="$COCOAPODS_LIBEXEC" ruby scripts/add-ios-test-target.rb
 
 cd "$REPO_ROOT/example/ios"
 echo "→ installing pods"
