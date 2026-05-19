@@ -17,10 +17,20 @@ public class ExpoAssistantModule: Module {
 
     var onEventReceived: ((VoiceEvent) -> Void)?
 
+    /// Singleton handle so the AppShortcuts bridge (declared as a
+    /// non-Module-context struct via `AppShortcutsProvider`) can call
+    /// back into the live module to emit invocation events. Weak so the
+    /// expo runtime can deinit the module normally.
+    public static weak var shared: ExpoAssistantModule?
+
     public func definition() -> ModuleDefinition {
         Name("ExpoAssistant")
 
         Events("onIntentInvoked", "onIntentCompleted", "onIntentFailed")
+
+        OnCreate {
+            ExpoAssistantModule.shared = self
+        }
 
         AsyncFunction("initialize") { (config: [String: Any]?, promise: Promise) in
             self.initializeModule(config: config) { error in
@@ -240,6 +250,14 @@ public class ExpoAssistantModule: Module {
         case .intentFailed:
             sendEvent("onIntentFailed", ["intentId": intentId, "error": error?.localizedDescription ?? "Unknown error"])
         }
+    }
+
+    /// Convenience entry point for the AppShortcuts bridge: a voice trigger
+    /// fired `GenericVoiceIntent.perform()`, which calls this on the
+    /// singleton. We thin-wrap `emitEvent` so the bridge doesn't need to
+    /// know about `VoiceEventType` internals.
+    func emitIntent(id: String, parameters: [String: Any]) {
+        emitEvent(type: .intentInvoked, intentId: id, data: parameters)
     }
 }
 

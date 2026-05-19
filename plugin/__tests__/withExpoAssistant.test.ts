@@ -8,6 +8,10 @@
  * stops writing a required key.
  */
 
+import fs from "fs";
+import os from "os";
+import path from "path";
+
 import { ExpoConfig } from "@expo/config-types";
 
 import withExpoAssistant, {
@@ -75,6 +79,18 @@ function applyPlugin(config: ExpoConfig, props: ExpoAssistantPluginConfig) {
       if (!mod) throw new Error("Android manifest mod not registered");
       const out = await mod({ ...result, modResults: initial, modRequest: {} });
       return out.modResults;
+    },
+    runIosDangerousMod: async (platformProjectRoot: string) => {
+      const mod = result.mods?.ios?.dangerous;
+      if (!mod) throw new Error("iOS dangerous mod not registered");
+      await mod({
+        ...result,
+        modResults: undefined,
+        modRequest: {
+          platformProjectRoot,
+          projectName: "test-app",
+        },
+      });
     },
   };
 }
@@ -361,5 +377,83 @@ describe("withExpoAssistant — plugin orchestration", () => {
       expect.any(String)
     );
     spy.mockRestore();
+  });
+});
+
+describe("withExpoAssistant — iOS AppShortcuts codegen", () => {
+  let tmpRoot: string;
+
+  beforeEach(() => {
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "expo-assistant-test-"));
+    fs.mkdirSync(path.join(tmpRoot, "test-app"), { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  });
+
+  const readGenerated = () =>
+    fs.readFileSync(
+      path.join(tmpRoot, "test-app", "AppShortcutsBridge.generated.swift"),
+      "utf8"
+    );
+
+  it("always writes AppShortcutsBridge.generated.swift even when no shortcuts are declared", async () => {
+    await applyPlugin(baseConfig(), {}).runIosDangerousMod(tmpRoot);
+    const swift = readGenerated();
+    expect(swift).toContain(
+      "public struct ExpoAssistantAppShortcuts: AppShortcutsProvider"
+    );
+    expect(swift).toContain("return [AppShortcut]()");
+  });
+
+  it("emits one AppShortcut per ios.appShortcuts entry", async () => {
+    await applyPlugin(baseConfig(), {
+      ios: {
+        appShortcuts: [
+          {
+            id: "search",
+            title: "Search",
+            phrases: ["Search for tacos"],
+            systemImageName: "magnifyingglass",
+          },
+          {
+            id: "play-music",
+            title: "Play Music",
+          },
+        ],
+      },
+    }).runIosDangerousMod(tmpRoot);
+
+    const swift = readGenerated();
+    expect(swift).toContain('GenericVoiceIntent(intentId: "search")');
+    expect(swift).toContain('phrases: ["Search for tacos"]');
+    expect(swift).toContain('shortTitle: "Search"');
+    expect(swift).toContain('systemImageName: "magnifyingglass"');
+
+    expect(swift).toContain('GenericVoiceIntent(intentId: "play-music")');
+    expect(swift).toContain('shortTitle: "Play Music"');
+    // Default phrases derive from title when not specified.
+    expect(swift).toContain('phrases: ["Play Music"]');
+    // Default systemImageName is "mic" when not specified.
+    expect(swift).toContain('systemImageName: "mic"');
+  });
+
+  it("escapes quotes and backslashes in shortcut titles and phrases", async () => {
+    await applyPlugin(baseConfig(), {
+      ios: {
+        appShortcuts: [
+          {
+            id: "weird",
+            title: 'Title with "quotes" and \\slashes',
+            phrases: ['Phrase "with quotes"'],
+          },
+        ],
+      },
+    }).runIosDangerousMod(tmpRoot);
+
+    const swift = readGenerated();
+    expect(swift).toContain('shortTitle: "Title with \\"quotes\\" and \\\\slashes"');
+    expect(swift).toContain('phrases: ["Phrase \\"with quotes\\""]');
   });
 });

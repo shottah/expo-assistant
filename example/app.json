@@ -27,6 +27,25 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-assistant",
+        {
+          "intents": ["search"],
+          "ios": {
+            "siriUsageDescription": "Search the example app via voice",
+            "appShortcuts": [
+              {
+                "id": "search",
+                "title": "Search Example",
+                "phrases": ["Search in example", "Search example"],
+                "systemImageName": "magnifyingglass"
+              }
+            ]
+          }
+        }
+      ]
+    ]
   }
 }
