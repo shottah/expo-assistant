@@ -50,7 +50,7 @@ describe("VoiceAssistant", () => {
       await VoiceAssistant.initialize();
 
       expect(mockModule.addListener).toHaveBeenCalledWith(
-        "onIntentReceived",
+        "onIntentInvoked",
         expect.any(Function)
       );
       expect(mockModule.addListener).toHaveBeenCalledWith(
@@ -374,28 +374,25 @@ describe("VoiceAssistant", () => {
       eventHandler = jest.fn();
     });
 
-    it("should add and trigger event listeners", async () => {
-      const intent = VoiceIntentBuilder.create()
-        .withId("event-intent")
-        .withCategory(IntentCategory.CUSTOM)
-        .withHandler({ handle: async () => ({}) })
-        .build();
+    it("should add and trigger event listeners for lifecycle events", async () => {
+      // Observer bus is for completion/failure lifecycle events, not
+      // invocation (invocation is push-only — see VoiceAssistant docstring).
+      voiceAssistant.addEventListener("onIntentCompleted", eventHandler);
 
-      await voiceAssistant.registerIntent(intent);
-
-      voiceAssistant.addEventListener("onIntentReceived", eventHandler);
-
-      const receivedHandler = mockModule.addListener.mock.calls.find(
-        (call) => call[0] === "onIntentReceived"
+      const completedHandler = mockModule.addListener.mock.calls.find(
+        (call) => call[0] === "onIntentCompleted"
       )?.[1];
 
-      receivedHandler?.({ intentId: "event-intent", data: { test: "data" } });
+      completedHandler?.({
+        intentId: "event-intent",
+        data: { result: "ok" },
+      });
 
       expect(eventHandler).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: "onIntentReceived",
+          type: "onIntentCompleted",
           intentId: "event-intent",
-          data: { test: "data" },
+          data: { result: "ok" },
           timestamp: expect.any(Date),
         })
       );
@@ -441,6 +438,128 @@ describe("VoiceAssistant", () => {
 
       expect(handler1).toHaveBeenCalled();
       expect(handler2).toHaveBeenCalled();
+    });
+  });
+
+  describe("Intent Invocation (voice → JS handler)", () => {
+    beforeEach(async () => {
+      voiceAssistant = await VoiceAssistant.initialize();
+    });
+
+    it("routes onIntentInvoked events to the registered handler — push model, no observer fan-out", async () => {
+      const handlerMock = jest.fn().mockResolvedValue({ ok: true });
+      const intent = VoiceIntentBuilder.create<{ query: string }>()
+        .withId("search")
+        .withCategory(IntentCategory.SEARCH)
+        .requiredParameter("query", { type: ParameterType.STRING })
+        .withHandler({ handle: handlerMock })
+        .build();
+
+      await voiceAssistant.registerIntent(intent);
+
+      const invokedListener = mockModule.addListener.mock.calls.find(
+        (call) => call[0] === "onIntentInvoked"
+      )?.[1];
+      expect(invokedListener).toBeDefined();
+
+      invokedListener!({ intentId: "search", parameters: { query: "tacos" } });
+
+      // Flush microtasks so the async dispatch completes.
+      await new Promise((resolve) => setImmediate(resolve));
+
+      // Handler ran with the invocation parameters.
+      expect(handlerMock).toHaveBeenCalledWith(
+        { query: "tacos" },
+        expect.objectContaining({
+          platform: "ios",
+          locale: "en-US",
+          sessionId: expect.any(String),
+          timestamp: expect.any(Date),
+        })
+      );
+    });
+
+    it("does not fan out invocation events to observers — push-only design", async () => {
+      const handlerMock = jest.fn().mockResolvedValue({ ok: true });
+      const observer = jest.fn();
+      const intent = VoiceIntentBuilder.create<{ query: string }>()
+        .withId("search-noobs")
+        .withCategory(IntentCategory.SEARCH)
+        .requiredParameter("query", { type: ParameterType.STRING })
+        .withHandler({ handle: handlerMock })
+        .build();
+
+      await voiceAssistant.registerIntent(intent);
+      // Subscribing with the legacy event name is intentionally a no-op —
+      // invocation is push-only. VoiceEvent.type doesn't include
+      // "onIntentInvoked"; the cast here mimics a stale call site.
+      voiceAssistant.addEventListener(
+        "onIntentInvoked" as any,
+        observer
+      );
+
+      const invokedListener = mockModule.addListener.mock.calls.find(
+        (call) => call[0] === "onIntentInvoked"
+      )?.[1];
+      invokedListener!({
+        intentId: "search-noobs",
+        parameters: { query: "tacos" },
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(handlerMock).toHaveBeenCalled();
+      expect(observer).not.toHaveBeenCalled();
+    });
+
+    it("silently drops onIntentInvoked for unknown intentId", async () => {
+      const invokedListener = mockModule.addListener.mock.calls.find(
+        (call) => call[0] === "onIntentInvoked"
+      )?.[1];
+      expect(invokedListener).toBeDefined();
+
+      // Should not throw, should not warn loudly.
+      expect(() =>
+        invokedListener!({ intentId: "never-registered", parameters: {} })
+      ).not.toThrow();
+      await new Promise((resolve) => setImmediate(resolve));
+    });
+
+    it("runs the handler's resolver and routes through executeIntent", async () => {
+      const handlerMock = jest.fn().mockResolvedValue({ ok: true });
+      const resolveMock = jest.fn().mockImplementation(async (params: any) => {
+        if (!params.query) return { needsValue: "query" };
+        return params;
+      });
+
+      const intent = VoiceIntentBuilder.create<{ query: string }>()
+        .withId("search-resolve")
+        .withCategory(IntentCategory.SEARCH)
+        .requiredParameter("query", { type: ParameterType.STRING })
+        .withHandler({ resolve: resolveMock, handle: handlerMock })
+        .build();
+
+      await voiceAssistant.registerIntent(intent);
+
+      const invokedListener = mockModule.addListener.mock.calls.find(
+        (call) => call[0] === "onIntentInvoked"
+      )?.[1];
+
+      // Missing query → resolver returns needsValue → handler not called.
+      invokedListener!({ intentId: "search-resolve", parameters: {} });
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(resolveMock).toHaveBeenCalled();
+      expect(handlerMock).not.toHaveBeenCalled();
+
+      // With query → handler is called.
+      invokedListener!({
+        intentId: "search-resolve",
+        parameters: { query: "tacos" },
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(handlerMock).toHaveBeenCalledWith(
+        { query: "tacos" },
+        expect.any(Object)
+      );
     });
   });
 

@@ -142,12 +142,12 @@ class ExpoAssistantModuleTests: XCTestCase {
         // sendEvent inside emitEvent requires the expo runtime; calling
         // outside it would throw. We only assert that the local
         // onEventReceived hook fires synchronously.
-        let event = VoiceEvent(type: .intentReceived, intentId: "test-intent", data: ["k": "v"], error: nil)
+        let event = VoiceEvent(type: .intentInvoked, intentId: "test-intent", data: ["k": "v"], error: nil)
         module.onEventReceived?(event)
         waitForExpectations(timeout: 1.0)
         XCTAssertNotNil(capturedEvent)
         XCTAssertEqual(capturedEvent?.intentId, "test-intent")
-        XCTAssertEqual(capturedEvent?.type, .intentReceived)
+        XCTAssertEqual(capturedEvent?.type, .intentInvoked)
     }
 }
 

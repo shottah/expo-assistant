@@ -368,13 +368,13 @@ class ExpoAssistantModuleTest {
     @Test
     fun `test event emission routes data to registered listener`() {
         val listener = mockk<(Map<String, Any>) -> Unit>(relaxed = true)
-        module.addListener("onIntentReceived", listener)
+        module.addListener("onIntentInvoked", listener)
 
         val payload = mapOf(
             "intentId" to "test-intent",
             "data" to mapOf("test" to "data")
         )
-        module.emitEvent("onIntentReceived", payload)
+        module.emitEvent("onIntentInvoked", payload)
 
         val captor = slot<Map<String, Any>>()
         verify { listener(capture(captor)) }
@@ -435,9 +435,9 @@ class ExpoAssistantModuleTest {
 
         // Emit event
         val listener = mockk<(Map<String, Any>) -> Unit>(relaxed = true)
-        module.addListener("onIntentReceived", listener)
+        module.addListener("onIntentInvoked", listener)
 
-        module.emitEvent("onIntentReceived", mapOf(
+        module.emitEvent("onIntentInvoked", mapOf(
             "intentId" to "search-intent",
             "data" to result
         ))

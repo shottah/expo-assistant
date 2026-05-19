@@ -35,7 +35,7 @@ class ExpoAssistantModule : Module() {
     override fun definition() = ModuleDefinition {
         Name("ExpoAssistant")
 
-        Events("onIntentReceived", "onIntentCompleted", "onIntentFailed")
+        Events("onIntentInvoked", "onIntentCompleted", "onIntentFailed")
 
         AsyncFunction("initialize") { config: Map<String, Any>?, promise: Promise ->
             initialize(config, promise)

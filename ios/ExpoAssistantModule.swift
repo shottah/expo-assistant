@@ -20,7 +20,7 @@ public class ExpoAssistantModule: Module {
     public func definition() -> ModuleDefinition {
         Name("ExpoAssistant")
 
-        Events("onIntentReceived", "onIntentCompleted", "onIntentFailed")
+        Events("onIntentInvoked", "onIntentCompleted", "onIntentFailed")
 
         AsyncFunction("initialize") { (config: [String: Any]?, promise: Promise) in
             self.initializeModule(config: config) { error in
@@ -233,8 +233,8 @@ public class ExpoAssistantModule: Module {
         onEventReceived?(event)
 
         switch type {
-        case .intentReceived:
-            sendEvent("onIntentReceived", ["intentId": intentId, "data": data ?? [:]])
+        case .intentInvoked:
+            sendEvent("onIntentInvoked", ["intentId": intentId, "data": data ?? [:]])
         case .intentCompleted:
             sendEvent("onIntentCompleted", ["intentId": intentId, "data": data ?? [:]])
         case .intentFailed:
@@ -267,7 +267,7 @@ enum PermissionStatus: String {
 }
 
 enum VoiceEventType {
-    case intentReceived
+    case intentInvoked
     case intentCompleted
     case intentFailed
 }
