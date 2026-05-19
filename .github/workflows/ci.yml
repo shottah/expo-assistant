@@ -115,3 +115,62 @@ jobs:
           path: |
             example/android/expo-assistant/build/reports/tests
             example/android/expo-assistant/build/reports/jacoco
+
+  ios-build:
+    name: iOS (build verification)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.1
+
+      - name: Cache bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock', 'example/bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+
+      - name: Install module dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install example dependencies
+        working-directory: example
+        run: bun install --frozen-lockfile
+
+      - name: Generate ios project
+        working-directory: example
+        run: bunx expo prebuild --platform ios --clean --no-install
+
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: example/ios/Pods
+          key: pods-${{ runner.os }}-${{ hashFiles('ios/ExpoAssistant.podspec', 'example/ios/Podfile.lock') }}
+          restore-keys: |
+            pods-${{ runner.os }}-
+
+      - name: Install pods
+        working-directory: example/ios
+        run: pod install --repo-update
+
+      # NOTE: test execution is deferred. CocoaPods 1.16 + React Native
+      # static_framework + s.test_spec do not produce a runnable test
+      # scheme. The Swift test file at ios/Tests/ExpoAssistantTests.swift
+      # exists and compiles under @testable import, but the test action
+      # isn't wired. This job verifies the production module compiles —
+      # catches the kind of malformed-AsyncFunction regression that
+      # silently shipped before this PR.
+      - name: Build ExpoAssistant pod
+        working-directory: example/ios
+        run: |
+          xcodebuild build \
+            -workspace expoassistantexample.xcworkspace \
+            -scheme ExpoAssistant \
+            -destination 'platform=iOS Simulator,name=iPhone 17' \
+            -sdk iphonesimulator \
+            CODE_SIGNING_ALLOWED=NO \
+            -quiet
