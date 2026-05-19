@@ -20,138 +20,109 @@ public class ExpoAssistantModule: Module {
 
         Events("onIntentReceived", "onIntentCompleted", "onIntentFailed")
 
-        AsyncFunction("initialize") { (config: [String: Any]?) -> Promise<Void> in
-            return Promise { resolver, rejecter in
-                self.initializeModule(config: config) { error in
-                    if let error = error {
-                        rejecter(error.localizedDescription, error.localizedDescription, error)
-                    } else {
-                        resolver(())
-                    }
+        AsyncFunction("initialize") { (config: [String: Any]?, promise: Promise) in
+            self.initializeModule(config: config) { error in
+                if let error = error {
+                    promise.reject("INIT_FAILED", error.localizedDescription)
+                } else {
+                    promise.resolve()
                 }
             }
         }
 
-        AsyncFunction("registerIntent") { (config: [String: Any]) -> Promise<Void> in
-            return Promise { resolver, rejecter in
-                guard let intentId = config["id"] as? String else {
-                    rejecter("INVALID_CONFIG", "Intent ID is required", nil)
-                    return
-                }
+        AsyncFunction("registerIntent") { (config: [String: Any], promise: Promise) in
+            guard let intentId = config["id"] as? String else {
+                promise.reject("INVALID_CONFIG", "Intent ID is required")
+                return
+            }
 
-                if self.registeredIntents.contains(intentId) {
-                    rejecter("ALREADY_REGISTERED", "Intent \(intentId) is already registered", nil)
-                    return
-                }
+            if self.registeredIntents.contains(intentId) {
+                promise.reject("ALREADY_REGISTERED", "Intent \(intentId) is already registered")
+                return
+            }
 
-                self.registerIntentInternal(config: config) { error in
-                    if let error = error {
-                        rejecter(error.localizedDescription, error.localizedDescription, error)
-                    } else {
-                        self.registeredIntents.insert(intentId)
-                        resolver(())
-                    }
+            self.registerIntentInternal(config: config) { error in
+                if let error = error {
+                    promise.reject("REGISTER_FAILED", error.localizedDescription)
+                } else {
+                    self.registeredIntents.insert(intentId)
+                    promise.resolve()
                 }
             }
         }
 
-        AsyncFunction("unregisterIntent") { (intentId: String) -> Promise<Void> in
-            return Promise { resolver, rejecter in
-                if !self.registeredIntents.contains(intentId) {
-                    rejecter("NOT_FOUND", "Intent \(intentId) not found", nil)
-                    return
-                }
-
-                self.registeredIntents.remove(intentId)
-                resolver(())
+        AsyncFunction("unregisterIntent") { (intentId: String, promise: Promise) in
+            if !self.registeredIntents.contains(intentId) {
+                promise.reject("NOT_FOUND", "Intent \(intentId) not found")
+                return
             }
+
+            self.registeredIntents.remove(intentId)
+            promise.resolve()
         }
 
-        AsyncFunction("donateIntent") { (intentId: String, parameters: [String: Any]) -> Promise<Void> in
-            return Promise { resolver, rejecter in
-                self.donateIntentInternal(intentId: intentId, parameters: parameters) { error in
-                    if let error = error {
-                        rejecter(error.localizedDescription, error.localizedDescription, error)
-                    } else {
-                        resolver(())
-                    }
+        AsyncFunction("donateIntent") { (intentId: String, parameters: [String: Any], promise: Promise) in
+            self.donateIntentInternal(intentId: intentId, parameters: parameters) { error in
+                if let error = error {
+                    promise.reject("DONATE_FAILED", error.localizedDescription)
+                } else {
+                    promise.resolve()
                 }
             }
         }
 
-        AsyncFunction("requestMicrophonePermission") -> Promise<String> in
-            return Promise { resolver, rejecter in
-                self.requestMicrophonePermissionInternal { status in
-                    resolver(status.rawValue)
+        AsyncFunction("requestMicrophonePermission") { (promise: Promise) in
+            self.requestMicrophonePermissionInternal { status in
+                promise.resolve(status.rawValue)
+            }
+        }
+
+        AsyncFunction("requestSpeechRecognitionPermission") { (promise: Promise) in
+            self.requestSpeechRecognitionPermissionInternal { status in
+                promise.resolve(status.rawValue)
+            }
+        }
+
+        AsyncFunction("checkCapabilities") { (promise: Promise) in
+            self.checkCapabilitiesInternal { capabilities in
+                promise.resolve(capabilities)
+            }
+        }
+
+        AsyncFunction("enableSiriKit") { (promise: Promise) in
+            self.enableSiriKitInternal { error in
+                if let error = error {
+                    promise.reject("ENABLE_SIRIKIT_FAILED", error.localizedDescription)
+                } else {
+                    promise.resolve()
                 }
             }
         }
 
-        AsyncFunction("requestSpeechRecognitionPermission") -> Promise<String> in
-            return Promise { resolver, rejecter in
-                self.requestSpeechRecognitionPermissionInternal { status in
-                    resolver(status.rawValue)
-                }
-            }
+        AsyncFunction("enableBackgroundProcessing") { (promise: Promise) in
+            self.isBackgroundProcessingEnabled = true
+            promise.resolve()
         }
 
-        AsyncFunction("checkCapabilities") -> Promise<[String: Any]> in
-            return Promise { resolver, rejecter in
-                self.checkCapabilitiesInternal { capabilities in
-                    resolver(capabilities)
-                }
-            }
+        AsyncFunction("enableCustomUI") { (promise: Promise) in
+            promise.resolve()
         }
 
-        AsyncFunction("enableSiriKit") -> Promise<Void> in
-            return Promise { resolver, rejecter in
-                self.enableSiriKitInternal { error in
-                    if let error = error {
-                        rejecter(error.localizedDescription, error.localizedDescription, error)
-                    } else {
-                        resolver(())
-                    }
-                }
-            }
+        AsyncFunction("getPlatform") { () -> String in
+            return "ios"
         }
 
-        AsyncFunction("enableBackgroundProcessing") -> Promise<Void> in
-            return Promise { resolver, rejecter in
-                self.isBackgroundProcessingEnabled = true
-                resolver(())
-            }
+        AsyncFunction("getLocale") { () -> String in
+            return Locale.current.identifier
         }
 
-        AsyncFunction("enableCustomUI") -> Promise<Void> in
-            return Promise { resolver, rejecter in
-                resolver(())
-            }
+        AsyncFunction("setDebugMode") { (enabled: Bool, promise: Promise) in
+            self.debugMode = enabled
+            promise.resolve()
         }
 
-        AsyncFunction("getPlatform") -> Promise<String> in
-            return Promise { resolver, rejecter in
-                resolver("ios")
-            }
-        }
-
-        AsyncFunction("getLocale") -> Promise<String> in
-            return Promise { resolver, rejecter in
-                let locale = Locale.current.identifier
-                resolver(locale)
-            }
-        }
-
-        AsyncFunction("setDebugMode") { (enabled: Bool) -> Promise<Void> in
-            return Promise { resolver, rejecter in
-                self.debugMode = enabled
-                resolver(())
-            }
-        }
-
-        AsyncFunction("enableAppActions") -> Promise<Void> in
-            return Promise { resolver, rejecter in
-                resolver(())
-            }
+        AsyncFunction("enableAppActions") { (promise: Promise) in
+            promise.resolve()
         }
     }
 
@@ -220,7 +191,7 @@ public class ExpoAssistantModule: Module {
         var capabilities: [String: Any] = [:]
 
         var iosCapabilities: [String: Any] = [
-            "speechRecognitionAvailable": SFSpeechRecognizer.isAvailable(),
+            "speechRecognitionAvailable": SFSpeechRecognizer.authorizationStatus() == .authorized,
             "siriKitSupported": true,
             "appIntentsSupported": false,
             "availableDomains": getAvailableSiriDomains()
