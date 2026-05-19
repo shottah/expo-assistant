@@ -19,25 +19,46 @@ bun add expo-assistant
     "ios": { "bundleIdentifier": "com.example.myapp" },
     "plugins": [
       ["expo-assistant", {
-        "intents": ["search"],
+        "intents": ["search", "productivity"],
         "ios": {
-          "siriUsageDescription": "Search the app via voice",
-          "appShortcuts": [{
-            "id": "search",
-            "title": "Search MyApp",
-            "systemImageName": "magnifyingglass",
-            "phrases": [
-              "Search for ${query} in ${applicationName}",
-              "Search ${applicationName} for ${query}",
-              "Search ${applicationName}"
-            ]
-          }]
+          "siriUsageDescription": "Search, capture, and schedule via voice",
+          "appShortcuts": [
+            {
+              "id": "search",
+              "title": "Search MyApp",
+              "systemImageName": "magnifyingglass",
+              "phrases": [
+                "Search in ${applicationName}",
+                "Search ${applicationName}"
+              ]
+            },
+            {
+              "id": "create-event",
+              "title": "Create Event",
+              "systemImageName": "calendar.badge.plus",
+              "phrases": [
+                "Create event in ${applicationName}",
+                "Use ${applicationName} to create an event"
+              ]
+            },
+            {
+              "id": "quick-note",
+              "title": "Quick Note",
+              "systemImageName": "square.and.pencil",
+              "phrases": [
+                "Add note to ${applicationName}",
+                "Quick note in ${applicationName}"
+              ]
+            }
+          ]
         }
       }]
     ]
   }
 }
 ```
+
+Three shortcuts side-by-side — one search, one capture, one scheduling intent. Each gets its own tile in Shortcuts.app Library / Spotlight, prompts the user for their query at tap time, and routes to a per-`id` JS handler. Mirrors what the `example/` app in this repo ships.
 
 ### Configuration reference
 
@@ -86,7 +107,7 @@ bun add expo-assistant
 **Phrase rules — non-negotiable:**
 
 1. Every phrase **must** include `${applicationName}` somewhere. iOS silently drops phrases without it; the plugin throws at prebuild.
-2. `${query}` is a parameter slot. Voice ("Search for *tacos* in MyApp") binds `query="tacos"`. Bare phrases ("Search MyApp") trigger a `requestValueDialog` prompt at runtime because the package's `query` parameter is required.
+2. **`${query}` slot does NOT work today.** The plugin still accepts it for forward-compatibility, but `linkd` rejects phrases containing it with `Skipping phrase template with an unrecognized token`, and the affected phrases never surface in Spotlight or voice. **Use bare phrases without `${query}` and rely on the prompt path instead** — the package's `query` parameter is required, so tapping the shortcut from Library / Spotlight triggers `requestValueDialog` and prompts the user for input. Tracked in #37.
 3. Declare 3–5 phrase variants per shortcut covering preposition swaps (`in`/`with`/`on`) and verb synonyms (`Search`/`Find`/`Look up`). iOS does not auto-synonymize connectors.
 4. Want a shorter spoken form? Add `ios.alternativeAppNames: ["MA", ...]` — iOS accepts any alias in the `${applicationName}` slot.
 
@@ -98,24 +119,53 @@ bunx expo prebuild --platform ios
 
 Generates `ios/<YourApp>/AppShortcutsBridge.generated.swift` and registers it in the Xcode pbxproj's Compile Sources phase.
 
-## 3. Register a JS handler
+## 3. Register JS handlers
+
+Register one handler per shortcut id you declared. Each receives the query string the user entered at the prompt and returns whatever your business logic produces:
 
 ```ts
 import { VoiceAssistant, VoiceIntentBuilder, IntentCategory, ParameterType } from 'expo-assistant';
 
 const va = await VoiceAssistant.initialize({ debugMode: true });
 
+const stringParam = (b: ReturnType<typeof VoiceIntentBuilder.create>) =>
+  b.requiredParameter('query', { type: ParameterType.STRING });
+
 await va.registerIntent(
-  VoiceIntentBuilder.create<{ query: string }>()
-    .withId('search')  // case-sensitive; must equal app.json `id` exactly
+  stringParam(VoiceIntentBuilder.create<{ query: string }>().withId('search'))
     .withCategory(IntentCategory.SEARCH)
-    .requiredParameter('query', { type: ParameterType.STRING })
     .withHandler({
       handle: async ({ query }) => ({ ok: true, hits: await doSearch(query) }),
     })
     .build()
 );
+
+await va.registerIntent(
+  stringParam(VoiceIntentBuilder.create<{ query: string }>().withId('create-event'))
+    .withCategory(IntentCategory.PRODUCTIVITY)
+    .withHandler({
+      handle: async ({ query }) => {
+        // Phase 1: parse the single query string in JS (chrono-node,
+        // your own parser, regex). Phase 2 (#25) will split title +
+        // date into distinct AppShortcut parameters Siri extracts.
+        const { title, when } = parseEventQuery(query);
+        return { ok: true, scheduled: await scheduleEvent(title, when) };
+      },
+    })
+    .build()
+);
+
+await va.registerIntent(
+  stringParam(VoiceIntentBuilder.create<{ query: string }>().withId('quick-note'))
+    .withCategory(IntentCategory.PRODUCTIVITY)
+    .withHandler({
+      handle: async ({ query }) => ({ ok: true, noteId: await appendNote(query) }),
+    })
+    .build()
+);
 ```
+
+**Critical:** `withId(...)` must equal the `id` field in `app.json` byte-for-byte. The JS dispatcher does a case-sensitive map lookup — `Search` ≠ `search`. Mismatch is silent (handler never fires).
 
 ## 4. Build + reinstall
 
@@ -133,9 +183,9 @@ xcrun simctl launch booted com.example.myapp
 
 | Path | Trigger | Behavior |
 |---|---|---|
-| Siri voice | "Search for *tacos* in MyApp" | Binds `query="tacos"`, fires handler |
-| Siri voice (bare) | "Search MyApp" | Prompts via `requestValueDialog`, then fires |
-| Spotlight | swipe down, type phrase, tap tile | Same as Library tap |
+| Siri voice (bare phrase) | "Search MyApp" | Prompts via `requestValueDialog`, then fires |
+| Siri voice (with query slot) | "Search for *tacos* in MyApp" | **Does NOT work today** — see #37. Same prompt path as bare today. |
+| Spotlight | swipe down, type phrase, tap tile | Prompts for query, fires handler |
 | Shortcuts.app → Library | tap auto-listed tile under your app | Prompts for unbound required params, fires |
 | Long-press app icon | suggested actions menu | Same as Library tap |
 
