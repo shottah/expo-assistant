@@ -32,19 +32,38 @@
       [
         "expo-assistant",
         {
-          "intents": ["search"],
+          "intents": ["search", "productivity"],
           "ios": {
-            "siriUsageDescription": "Search the example app via voice",
+            "siriUsageDescription": "Search, capture, and schedule via voice in the example app",
             "appShortcuts": [
               {
                 "id": "search",
                 "title": "Search Example",
+                "systemImageName": "magnifyingglass",
                 "phrases": [
-                "Search for ${query} in ${applicationName}",
-                "Search ${applicationName} for ${query}",
-                "Search ${applicationName}"
-              ],
-                "systemImageName": "magnifyingglass"
+                  "Search in ${applicationName}",
+                  "Search ${applicationName}"
+                ]
+              },
+              {
+                "id": "create-event",
+                "title": "Create Event",
+                "systemImageName": "calendar.badge.plus",
+                "phrases": [
+                  "Create event in ${applicationName}",
+                  "New event in ${applicationName}",
+                  "Use ${applicationName} to create an event"
+                ]
+              },
+              {
+                "id": "quick-note",
+                "title": "Quick Note",
+                "systemImageName": "square.and.pencil",
+                "phrases": [
+                  "Add note to ${applicationName}",
+                  "Quick note in ${applicationName}",
+                  "Capture in ${applicationName}"
+                ]
               }
             ]
           }

@@ -1,7 +1,7 @@
 module.exports = {
   preset: "ts-jest",
   testEnvironment: "node",
-  roots: ["<rootDir>/src", "<rootDir>/plugin"],
+  roots: ["<rootDir>/src", "<rootDir>/plugin", "<rootDir>/example/lib"],
   testMatch: [
     "**/__tests__/**/*.test.ts",
     "**/__tests__/**/*.test.tsx",
