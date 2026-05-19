@@ -125,7 +125,7 @@ export interface PermissionManager {
 }
 
 export interface VoiceEvent {
-  type: "onIntentReceived" | "onIntentCompleted" | "onIntentFailed";
+  type: "onIntentInvoked" | "onIntentCompleted" | "onIntentFailed";
   intentId: string;
   data?: any;
   error?: Error;

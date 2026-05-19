@@ -45,9 +45,12 @@ export class VoiceAssistant {
   }
 
   private setupEventListeners(): void {
+    // Voice-triggered invocation from Siri / Google Assistant.
+    // handleIntentInvoked fans out to observers AND runs the registered
+    // intent handler via executeIntent — single channel, both behaviors.
     ExpoAssistantModule.addListener(
-      "onIntentReceived",
-      this.handleIntentReceived.bind(this)
+      "onIntentInvoked",
+      this.handleIntentInvoked.bind(this)
     );
     ExpoAssistantModule.addListener(
       "onIntentCompleted",
@@ -57,45 +60,40 @@ export class VoiceAssistant {
       "onIntentFailed",
       this.handleIntentFailed.bind(this)
     );
-    // Voice-triggered invocation from Siri / Google Assistant — routes
-    // back to the user-registered handler via executeIntent, which
-    // already wraps resolver / handler / onError.
-    ExpoAssistantModule.addListener(
-      "onIntentInvoked",
-      this.handleIntentInvoked.bind(this)
-    );
   }
 
   private handleIntentInvoked(event: {
     intentId: string;
-    parameters: Record<string, unknown>;
+    parameters?: Record<string, unknown>;
+    data?: unknown;
   }): void {
-    if (!this.registeredIntents.has(event.intentId)) {
-      // Unknown intent — emission from a stale donation or another
-      // session. Silently ignore so the JS layer doesn't crash on
-      // surprise events.
+    const registration = this.registeredIntents.get(event.intentId);
+    if (!registration || registration.enabled === false) {
+      // Unknown / disabled intent — emission from a stale donation or
+      // another session. Silently ignore so the JS layer doesn't crash
+      // on surprise events.
       return;
     }
-    void this.executeIntent(event.intentId, event.parameters).catch((err) => {
+
+    // Native modules pass invocation args under either `parameters`
+    // (new path) or `data` (legacy payload shape). Accept both.
+    const params = event.parameters ?? (event.data as Record<string, unknown> | undefined) ?? {};
+
+    // Fan out: notify observers registered via addEventListener.
+    this.emitEvent({
+      type: "onIntentInvoked",
+      intentId: event.intentId,
+      data: params,
+      timestamp: new Date(),
+    });
+
+    // Execute: run the user's registered handler (resolver → handle → onError).
+    void this.executeIntent(event.intentId, params).catch((err) => {
       console.error(
         `expo-assistant: handler for ${event.intentId} threw during invocation`,
         err
       );
     });
-  }
-
-  private handleIntentReceived(event: any): void {
-    const intentId = event.intentId;
-    const registration = this.registeredIntents.get(intentId);
-
-    if (registration && registration.enabled !== false) {
-      this.emitEvent({
-        type: "onIntentReceived",
-        intentId,
-        data: event.data,
-        timestamp: new Date(),
-      });
-    }
   }
 
   private handleIntentCompleted(event: any): void {

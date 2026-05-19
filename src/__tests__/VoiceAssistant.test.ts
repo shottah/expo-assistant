@@ -50,7 +50,7 @@ describe("VoiceAssistant", () => {
       await VoiceAssistant.initialize();
 
       expect(mockModule.addListener).toHaveBeenCalledWith(
-        "onIntentReceived",
+        "onIntentInvoked",
         expect.any(Function)
       );
       expect(mockModule.addListener).toHaveBeenCalledWith(
@@ -383,17 +383,17 @@ describe("VoiceAssistant", () => {
 
       await voiceAssistant.registerIntent(intent);
 
-      voiceAssistant.addEventListener("onIntentReceived", eventHandler);
+      voiceAssistant.addEventListener("onIntentInvoked", eventHandler);
 
       const receivedHandler = mockModule.addListener.mock.calls.find(
-        (call) => call[0] === "onIntentReceived"
+        (call) => call[0] === "onIntentInvoked"
       )?.[1];
 
       receivedHandler?.({ intentId: "event-intent", data: { test: "data" } });
 
       expect(eventHandler).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: "onIntentReceived",
+          type: "onIntentInvoked",
           intentId: "event-intent",
           data: { test: "data" },
           timestamp: expect.any(Date),
@@ -449,8 +449,9 @@ describe("VoiceAssistant", () => {
       voiceAssistant = await VoiceAssistant.initialize();
     });
 
-    it("routes onIntentInvoked events to the registered handler with parameters", async () => {
+    it("routes onIntentInvoked events to the registered handler AND fans out to observers", async () => {
       const handlerMock = jest.fn().mockResolvedValue({ ok: true });
+      const observer = jest.fn();
       const intent = VoiceIntentBuilder.create<{ query: string }>()
         .withId("search")
         .withCategory(IntentCategory.SEARCH)
@@ -459,6 +460,7 @@ describe("VoiceAssistant", () => {
         .build();
 
       await voiceAssistant.registerIntent(intent);
+      voiceAssistant.addEventListener("onIntentInvoked", observer);
 
       const invokedListener = mockModule.addListener.mock.calls.find(
         (call) => call[0] === "onIntentInvoked"
@@ -470,12 +472,23 @@ describe("VoiceAssistant", () => {
       // Flush microtasks so the async dispatch completes.
       await new Promise((resolve) => setImmediate(resolve));
 
+      // Handler ran with the invocation parameters.
       expect(handlerMock).toHaveBeenCalledWith(
         { query: "tacos" },
         expect.objectContaining({
           platform: "ios",
           locale: "en-US",
           sessionId: expect.any(String),
+          timestamp: expect.any(Date),
+        })
+      );
+
+      // Observer received the broadcast on the same event.
+      expect(observer).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "onIntentInvoked",
+          intentId: "search",
+          data: { query: "tacos" },
           timestamp: expect.any(Date),
         })
       );
