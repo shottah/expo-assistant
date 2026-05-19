@@ -5,13 +5,15 @@ import AVFoundation
 
 @available(iOS 13.0, *)
 public class ExpoAssistantModule: Module {
-    private var speechRecognizer: SpeechRecognizerProtocol = SpeechRecognizer()
-    private var intentHandler: IntentHandlerProtocol = IntentHandler()
-    private var registeredIntents: Set<String> = []
-    private var config: VoiceAssistantConfig?
-    private var isInitialized = false
-    private var isBackgroundProcessingEnabled = false
-    private var debugMode = false
+    // `internal` so `@testable import ExpoAssistant` can swap mocks and
+    // inspect state. Still hidden from external consumers.
+    internal var speechRecognizer: SpeechRecognizerProtocol = SpeechRecognizer()
+    internal var intentHandler: IntentHandlerProtocol = IntentHandler()
+    internal var registeredIntents: Set<String> = []
+    internal var config: VoiceAssistantConfig?
+    internal var isInitialized = false
+    internal var isBackgroundProcessingEnabled = false
+    internal var debugMode = false
 
     var onEventReceived: ((VoiceEvent) -> Void)?
 
