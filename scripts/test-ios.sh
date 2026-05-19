@@ -43,5 +43,10 @@ xcodebuild test \
   -scheme ExpoAssistant-Unit-Tests \
   -destination "platform=iOS Simulator,name=$SIM" \
   -sdk iphonesimulator \
+  -resultBundlePath test-results.xcresult \
+  -enableCodeCoverage YES \
   CODE_SIGNING_ALLOWED=NO \
   | (xcpretty 2>/dev/null || cat)
+
+echo "→ coverage in example/ios/test-results.xcresult"
+echo "  inspect with: xcrun xccov view --report example/ios/test-results.xcresult"

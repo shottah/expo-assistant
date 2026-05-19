@@ -156,8 +156,23 @@ jobs:
             -destination 'platform=iOS Simulator,name=iPhone 17' \
             -sdk iphonesimulator \
             -resultBundlePath test-results.xcresult \
+            -enableCodeCoverage YES \
             CODE_SIGNING_ALLOWED=NO \
             | xcpretty
+
+      - name: Convert xcresult to cobertura XML
+        working-directory: example/ios
+        run: |
+          brew install a7ex/homebrew-formulae/xcresultparser
+          xcresultparser --output-format cobertura test-results.xcresult > coverage.xml
+
+      - name: Upload iOS coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: example/ios/coverage.xml
+          flags: ios
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: Upload xcresult artifact
         if: always()
