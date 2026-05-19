@@ -92,9 +92,8 @@ function withGeneratedAppShortcuts(
     );
 
     const entries = shortcuts.map((s) => {
-      const phrases = (s.phrases ?? [s.title]).map(
-        (p) => `"${escapeSwift(p)}"`
-      );
+      const rawPhrases = s.phrases ?? [`\${applicationName}`];
+      const phrases = rawPhrases.map((p) => buildPhraseLiteral(p, s.id));
       return `            AppShortcut(
                 intent: GenericVoiceIntent(intentId: "${escapeSwift(s.id)}"),
                 phrases: [${phrases.join(", ")}],
@@ -151,6 +150,33 @@ ${arrayBody}
 
 function escapeSwift(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+/**
+ * Emits a Swift string literal for an AppShortcut phrase, converting the
+ * `${applicationName}` placeholder to the literal Swift interpolation
+ * `\(.applicationName)` that AppShortcutPhrase resolves at scan time.
+ *
+ * Apple requires every phrase to contain this token — without it linkd
+ * logs `Skipping phrase missing an ${applicationName} token` and the
+ * AppShortcut becomes invisible to Spotlight, Siri, and the long-press
+ * shortcut suggestions. We throw at prebuild rather than emit a silently
+ * broken provider.
+ *
+ * The interpolation backslash must NOT pass through escapeSwift — it is
+ * Swift compile-time syntax, not a runtime string character. So we split
+ * the phrase on the placeholder, escape each plain-text segment, then
+ * rejoin with the raw `\(.applicationName)` sequence.
+ */
+function buildPhraseLiteral(phrase: string, intentId: string): string {
+  const TOKEN = "${applicationName}";
+  if (!phrase.includes(TOKEN)) {
+    throw new Error(
+      `[expo-assistant] iOS AppShortcut phrase for "${intentId}" must contain "${TOKEN}" — got: ${JSON.stringify(phrase)}. Apple silently drops phrases missing this token.`
+    );
+  }
+  const segments = phrase.split(TOKEN).map(escapeSwift);
+  return `"${segments.join("\\(.applicationName)")}"`;
 }
 
 function setInfoPlist(

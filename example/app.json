@@ -39,7 +39,7 @@
               {
                 "id": "search",
                 "title": "Search Example",
-                "phrases": ["Search in example", "Search example"],
+                "phrases": ["Search in ${applicationName}", "Search ${applicationName}"],
                 "systemImageName": "magnifyingglass"
               }
             ]

@@ -107,11 +107,15 @@ function applyPlugin(config: ExpoConfig, props: ExpoAssistantPluginConfig) {
             projectName: "test-app",
           },
         });
-      } catch {
-        // pbxproj stub may not satisfy every internal call inside
-        // addBuildSourceFileToGroup; the file-write assertion below is
-        // what the test cares about. Swallow stub-incompatibility
-        // throws so the test still validates the swift output.
+      } catch (err: any) {
+        // Deliberate validation errors from the plugin (prefixed
+        // [expo-assistant]) must propagate so tests can assert on them.
+        // Only swallow stub-incompatibility throws from
+        // addBuildSourceFileToGroup, which the file-write assertion
+        // tolerates.
+        if (String(err?.message ?? "").startsWith("[expo-assistant]")) {
+          throw err;
+        }
       }
     },
   };
@@ -436,7 +440,7 @@ describe("withExpoAssistant — iOS AppShortcuts codegen", () => {
           {
             id: "search",
             title: "Search",
-            phrases: ["Search for tacos"],
+            phrases: ["Search for tacos in ${applicationName}"],
             systemImageName: "magnifyingglass",
           },
           {
@@ -449,14 +453,17 @@ describe("withExpoAssistant — iOS AppShortcuts codegen", () => {
 
     const swift = readGenerated();
     expect(swift).toContain('GenericVoiceIntent(intentId: "search")');
-    expect(swift).toContain('phrases: ["Search for tacos"]');
+    // Placeholder must be emitted as raw Swift interpolation — NOT escaped.
+    expect(swift).toContain(
+      'phrases: ["Search for tacos in \\(.applicationName)"]'
+    );
     expect(swift).toContain('shortTitle: "Search"');
     expect(swift).toContain('systemImageName: "magnifyingglass"');
 
     expect(swift).toContain('GenericVoiceIntent(intentId: "play-music")');
     expect(swift).toContain('shortTitle: "Play Music"');
-    // Default phrases derive from title when not specified.
-    expect(swift).toContain('phrases: ["Play Music"]');
+    // Default phrase when none specified is just the app name.
+    expect(swift).toContain('phrases: ["\\(.applicationName)"]');
     // Default systemImageName is "mic" when not specified.
     expect(swift).toContain('systemImageName: "mic"');
   });
@@ -468,7 +475,7 @@ describe("withExpoAssistant — iOS AppShortcuts codegen", () => {
           {
             id: "weird",
             title: 'Title with "quotes" and \\slashes',
-            phrases: ['Phrase "with quotes"'],
+            phrases: ['Phrase "with quotes" in ${applicationName}'],
           },
         ],
       },
@@ -476,6 +483,24 @@ describe("withExpoAssistant — iOS AppShortcuts codegen", () => {
 
     const swift = readGenerated();
     expect(swift).toContain('shortTitle: "Title with \\"quotes\\" and \\\\slashes"');
-    expect(swift).toContain('phrases: ["Phrase \\"with quotes\\""]');
+    expect(swift).toContain(
+      'phrases: ["Phrase \\"with quotes\\" in \\(.applicationName)"]'
+    );
+  });
+
+  it("rejects AppShortcut phrases missing the ${applicationName} token", async () => {
+    await expect(
+      applyPlugin(baseConfig(), {
+        ios: {
+          appShortcuts: [
+            {
+              id: "bad",
+              title: "Bad",
+              phrases: ["Search for tacos"],
+            },
+          ],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot)
+    ).rejects.toThrow(/must contain "\$\{applicationName\}"/);
   });
 });
