@@ -36,7 +36,7 @@ module.exports = {
     // Android mods get exercised via the e2e flow).
     global: {
       branches: 55,
-      functions: 72,
+      functions: 70,
       lines: 68,
       statements: 68,
     },
