@@ -26,44 +26,41 @@ import AppIntents
 /// Single generic `AppIntent` that all expo-assistant-declared voice
 /// shortcuts route through. The runtime distinguishes which intent fired
 /// by reading `intentId`. Parameters travel as discrete `@Parameter`s on
-/// this struct; for now only an optional `query` is exposed (most
-/// invocations carry at most one free-form string). Richer typed
-/// parameter shapes are deferred until a real need surfaces (see issue
-/// #19 for the INInteraction-based upgrade path that would also benefit
-/// from typed intents).
+/// this struct; for now `query` is a required free-form string (most
+/// invocations carry at most one). Richer typed parameter shapes are
+/// deferred until a real need surfaces (see issue #19 for the
+/// INInteraction-based upgrade path that would also benefit from typed
+/// intents).
+///
+/// `query` is intentionally NON-optional. iOS skips optional @Parameters
+/// by default in the AppShortcut tap-from-Library flow — even with a
+/// requestValueDialog or a parameterSummary referencing the param. The
+/// only way to make iOS prompt for a value when the AppShortcut binds
+/// just `intentId` is for `query` to be required. Developers who want a
+/// shortcut that never prompts should bind `query` to an empty string
+/// in their AppShortcut definition (future plugin feature) instead of
+/// flipping this back to optional.
 @available(iOS 16.0, *)
 public struct GenericVoiceIntent: AppIntent {
     public static var title: LocalizedStringResource = "Voice Intent"
 
-    // Drives the Shortcuts.app editor preview AND the `needsValue` flow
-    // when an AppShortcut tile is tapped without a bound query.
-    // Without a parameterSummary that references $query, iOS treats the
-    // optional query as "not requested" and skips it silently — which is
-    // why tap-to-run produced nil before this was added.
     public static var parameterSummary: some ParameterSummary {
-        Summary("Run \(\.$intentId)") {
-            \.$query
-        }
+        Summary("Run \(\.$intentId) with \(\.$query)")
     }
 
     @Parameter(title: "Intent ID")
     public var intentId: String
 
-    // `requestValueDialog` is what iOS speaks (or shows) when it needs
-    // a value and has none — triggered when the phrase template includes
-    // \(\.$query) but the spoken phrase didn't fill it, OR when the
-    // AppShortcut tile is tapped from Library/Spotlight without binding.
     @Parameter(
         title: "Query",
         requestValueDialog: "What would you like to search for?"
     )
-    public var query: String?
+    public var query: String
 
     public init() {}
 
-    public init(intentId: String, query: String? = nil) {
+    public init(intentId: String) {
         self.intentId = intentId
-        self.query = query
     }
 
     public func perform() async throws -> some IntentResult {
@@ -71,7 +68,7 @@ public struct GenericVoiceIntent: AppIntent {
             ExpoAssistantModule.shared?.emitIntent(
                 id: intentId,
                 parameters: [
-                    "query": query as Any
+                    "query": query
                 ]
             )
         }
