@@ -9,12 +9,24 @@ Native voice assistant integration for Expo apps with Siri and Google Assistant 
 
 ## Features
 
-- 🎙️ **Siri Integration** - SiriKit and App Intents (iOS 16+) support
-- 🤖 **Google Assistant** - App Actions and Built-in Intents
-- 🔧 **Config Plugin** - Automated native setup for iOS/Android
-- 📱 **Cross-Platform** - Unified API for both platforms
-- 🎯 **TypeScript** - Full type safety and IntelliSense
-- 🧪 **Well Tested** - 94 JS + 28 Android tests across JS, plugin, and native layers
+- 🔧 **Config Plugin** — auto-wires Info.plist, entitlements, AndroidManifest, shortcuts.xml, deep-link verification
+- 📱 **Cross-platform TypeScript API** — single `VoiceAssistant` + `VoiceIntentBuilder` for iOS and Android
+- 🎯 **Typed intent builder** — generic-parametrized; compiler enforces handler signatures
+- 🧪 **Tested across layers** — JS unit + plugin assertions + bridge contracts + iOS XCTest + Android JUnit/Robolectric
+
+## Status
+
+This package ships **today**:
+- Full config-plugin setup (one `app.json` block configures iOS + Android native voice integration)
+- TypeScript intent declaration API and fluent builder
+- `donateIntent()` for iOS Siri Suggestions (NSUserActivity)
+- Dynamic shortcuts on Android (ShortcutManager)
+
+Still in development (native scaffolding present, runtime not fully wired):
+- Siri / App Intents invocation → JS handler callback (iOS 16+ AppShortcutsProvider bridge)
+- Google Assistant / App Actions invocation → JS handler callback (Android intent forwarding)
+
+In other words: the manifest plumbing is done; the bidirectional runtime bridge is the next milestone.
 
 ## Installation
 
@@ -207,23 +219,13 @@ const todoIntent = VoiceIntentBuilder
 
 ## Documentation
 
-- [Config Plugin Guide](./PLUGIN.md) - Detailed plugin configuration
-- [API Documentation](https://github.com/shottah/expo-assistant/wiki) - Full API reference
-- [Examples](./example) - Sample implementations
-
-## Contributing
-
-Contributions are welcome! Please read our [contributing guidelines](./CONTRIBUTING.md) first.
-
-## License
-
-MIT © [shottah](https://github.com/shottah)
+- [PLUGIN.md](./PLUGIN.md) — config plugin reference (what gets written to Info.plist / AndroidManifest / shortcuts.xml)
+- [example/](./example) — runnable example app driving the public API
 
 ## Support
 
 - [GitHub Issues](https://github.com/shottah/expo-assistant/issues)
-- [Discord Community](https://discord.gg/expo-assistant)
 
----
+## License
 
-Built with ❤️ using Expo Modules API
+MIT © [shottah](https://github.com/shottah)

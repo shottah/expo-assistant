@@ -160,17 +160,26 @@ The plugin adds necessary entitlements to your `.entitlements` file:
 - [SiriKit Entitlements](https://developer.apple.com/documentation/sirikit/requesting_authorization_to_use_sirikit)
 - [App Groups](https://developer.apple.com/documentation/security/keychain_services/keychain_items/sharing_access_to_keychain_items_among_a_collection_of_apps)
 
-#### 3. Intent Extension (if custom intents are used)
+#### 3. Intent Extension (planned — not yet shipped)
 
-For custom intents, the plugin generates an Intent Extension target with:
+> **Status:** the plugin scaffolds `IntentHandler.swift` and an extension
+> `Info.plist` under `ios/IntentExtension/` at prebuild time, but does
+> **not** add the Intent Extension target to your Xcode project
+> automatically. Adding the target (and its scheme + signing) is currently
+> a manual one-time Xcode step. Automating this via `withXcodeProject` is
+> tracked separately.
+>
+> For now, treat this section as a reference for what the manual target
+> wiring would look like — not as documented current behavior.
+
+For custom intents, the prebuilt scaffold contains:
 
 - Separate `Info.plist` with supported intents
-- Intent definition files (`.intentdefinition`)
-- Extension source files
-- Proper provisioning profiles
+- A starter `IntentHandler.swift` with a switch on intent types
+- Stubs for each `INIntent` handler returning success
 
 ```xml
-<!-- Intent Extension Info.plist -->
+<!-- ios/IntentExtension/Info.plist (generated) -->
 <key>NSExtension</key>
 <dict>
   <key>NSExtensionPointIdentifier</key>
@@ -191,13 +200,20 @@ For custom intents, the plugin generates an Intent Extension target with:
 
 **Documentation**: [Creating an Intents Extension](https://developer.apple.com/documentation/SiriKit/creating-an-intents-app-extension)
 
-#### 4. App Intents (iOS 16+)
+#### 4. App Intents (iOS 16+) — planned
 
-For iOS 16+, the plugin configures App Intents framework support:
+> **Status:** the plugin sets `INAlternativeAppNames` and SiriKit
+> entitlement keys, which gives App Shortcuts the metadata they need.
+> The runtime piece — generating `AppShortcutsProvider` + `AppIntent`
+> implementations and routing invocations back to a JS handler — is the
+> next milestone. See the package's [GitHub Issues](https://github.com/shottah/expo-assistant/issues)
+> for the tracking discussion.
 
-- Generates `AppShortcuts.swift` with voice phrases
-- Creates `AppIntent` protocol implementations
-- Configures Focus filters and widgets
+Eventual scope:
+
+- Generate `AppShortcuts.swift` with voice phrases
+- Create `AppIntent` protocol implementations
+- Configure Focus filters and widgets
 
 **Documentation**: [App Intents Framework](https://developer.apple.com/documentation/appintents)
 
