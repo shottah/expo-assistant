@@ -2,6 +2,9 @@ import ExpoModulesCore
 import Intents
 import Speech
 import AVFoundation
+#if canImport(AppIntents)
+import AppIntents
+#endif
 
 @available(iOS 13.0, *)
 public class ExpoAssistantModule: Module {
@@ -351,14 +354,41 @@ class SpeechRecognizer: SpeechRecognizerProtocol {
 }
 
 class IntentHandler: IntentHandlerProtocol {
+    /// Tell iOS the user just performed this action. Uses
+    /// `IntentDonationManager.shared.donate(intent:)` — the App Intents
+    /// (iOS 16+) native donate path that wraps the same
+    /// `GenericVoiceIntent` Siri already knows about from
+    /// `AppShortcutsBridge.generated.swift`. Donating the typed intent
+    /// (rather than a loosely-typed `NSUserActivity`) gives Siri's
+    /// prediction engine the same shape it sees at invocation time —
+    /// better suggestions, and donations become queryable / deletable
+    /// via `IntentDonationManager` for future privacy / "forget this"
+    /// features.
+    ///
+    /// `parameters["query"]` is the one string slot today. If absent,
+    /// we donate an empty-query variant so iOS still records the user's
+    /// usage of the intent id; an empty string is a valid value for the
+    /// required `query` parameter at donation time (donation never
+    /// triggers `perform()`, so the empty value never reaches JS).
     func donate(intentId: String, parameters: [String: Any], completion: @escaping (Error?) -> Void) {
-        let activity = NSUserActivity(activityType: "com.expoassistant.\(intentId)")
-        activity.title = intentId
-        activity.userInfo = parameters
-        activity.isEligibleForPrediction = true
-        activity.persistentIdentifier = NSUserActivityPersistentIdentifier(intentId)
-
-        activity.becomeCurrent()
+        if #available(iOS 16.0, *) {
+            let query = (parameters["query"] as? String) ?? ""
+            let intent = GenericVoiceIntent(intentId: intentId)
+            intent.query = query
+            Task {
+                do {
+                    try await IntentDonationManager.shared.donate(intent: intent)
+                    completion(nil)
+                } catch {
+                    completion(error)
+                }
+            }
+            return
+        }
+        // iOS 15 and earlier — no AppIntents framework. The package
+        // already requires iOS 16+ for AppShortcut discovery, so this
+        // branch is unreachable for any deployment target we support.
+        // Kept for forward-safety only.
         completion(nil)
     }
 
