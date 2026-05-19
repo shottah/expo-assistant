@@ -1,5 +1,10 @@
 # expo-assistant
 
+[![CI](https://github.com/shottah/expo-assistant/actions/workflows/ci.yml/badge.svg?branch=development)](https://github.com/shottah/expo-assistant/actions/workflows/ci.yml)
+[![JS Coverage](https://codecov.io/gh/shottah/expo-assistant/branch/development/graph/badge.svg?flag=js)](https://app.codecov.io/gh/shottah/expo-assistant?flag=js)
+[![Android Coverage](https://codecov.io/gh/shottah/expo-assistant/branch/development/graph/badge.svg?flag=android)](https://app.codecov.io/gh/shottah/expo-assistant?flag=android)
+[![npm version](https://img.shields.io/npm/v/expo-assistant.svg)](https://www.npmjs.com/package/expo-assistant)
+
 Native voice assistant integration for Expo apps with Siri and Google Assistant support.
 
 ## Features
@@ -9,7 +14,7 @@ Native voice assistant integration for Expo apps with Siri and Google Assistant 
 - 🔧 **Config Plugin** - Automated native setup for iOS/Android
 - 📱 **Cross-Platform** - Unified API for both platforms
 - 🎯 **TypeScript** - Full type safety and IntelliSense
-- 🧪 **Well Tested** - 89% test coverage with 72 tests
+- 🧪 **Well Tested** - 94 JS + 28 Android tests across JS, plugin, and native layers
 
 ## Installation
 
