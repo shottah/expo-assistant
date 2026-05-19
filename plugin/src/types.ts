@@ -38,6 +38,21 @@ export interface ExpoAssistantPluginConfig {
     requiresUnlock?: boolean;
     siriKitDomains?: string[];
     appIntentSchemas?: string[];
+    /**
+     * Voice shortcuts exposed via AppShortcutsProvider (iOS 16+).
+     * Each entry becomes a Siri-triggerable shortcut. The plugin
+     * generates `ios/AppShortcutsBridge.generated.swift` at prebuild
+     * containing the populated AppShortcut list. Each shortcut's
+     * `perform()` fires `onIntentInvoked` with the declared `id`,
+     * routed by VoiceAssistant to the registered JS handler with
+     * matching `intent.id`.
+     */
+    appShortcuts?: {
+      id: string;
+      title: string;
+      phrases?: string[];
+      systemImageName?: string;
+    }[];
   };
 
   // Android Specific

@@ -8,6 +8,10 @@
  * stops writing a required key.
  */
 
+import fs from "fs";
+import os from "os";
+import path from "path";
+
 import { ExpoConfig } from "@expo/config-types";
 
 import withExpoAssistant, {
@@ -75,6 +79,44 @@ function applyPlugin(config: ExpoConfig, props: ExpoAssistantPluginConfig) {
       if (!mod) throw new Error("Android manifest mod not registered");
       const out = await mod({ ...result, modResults: initial, modRequest: {} });
       return out.modResults;
+    },
+    runIosAppShortcutsCodegen: async (platformProjectRoot: string) => {
+      const mod = result.mods?.ios?.xcodeproj;
+      if (!mod) throw new Error("iOS xcodeproj mod not registered");
+      // Minimal pbxproj stub — the mod calls
+      // IOSConfig.XcodeUtils.addBuildSourceFileToGroup which mutates
+      // this object. The structure mimics what `xcode` parses from a
+      // real pbxproj; we don't assert on the mutations here (the
+      // existence of the written swift file is the durable contract).
+      const pbxprojStub: any = {
+        hash: { project: { objects: {} } },
+        getFirstTarget: () => ({ uuid: "TEST_TARGET_UUID" }),
+        addSourceFile: () => undefined,
+        addPbxGroup: () => ({ uuid: "TEST_GROUP_UUID" }),
+        addToPbxFileReferenceSection: () => undefined,
+        addToPbxBuildFileSection: () => undefined,
+        addToPbxSourcesBuildPhase: () => undefined,
+        pbxGroupByName: () => ({ uuid: "TEST_GROUP_UUID", children: [] }),
+      };
+      try {
+        await mod({
+          ...result,
+          modResults: pbxprojStub,
+          modRequest: {
+            platformProjectRoot,
+            projectName: "test-app",
+          },
+        });
+      } catch (err: any) {
+        // Deliberate validation errors from the plugin (prefixed
+        // [expo-assistant]) must propagate so tests can assert on them.
+        // Only swallow stub-incompatibility throws from
+        // addBuildSourceFileToGroup, which the file-write assertion
+        // tolerates.
+        if (String(err?.message ?? "").startsWith("[expo-assistant]")) {
+          throw err;
+        }
+      }
     },
   };
 }
@@ -361,5 +403,124 @@ describe("withExpoAssistant — plugin orchestration", () => {
       expect.any(String)
     );
     spy.mockRestore();
+  });
+});
+
+describe("withExpoAssistant — iOS AppShortcuts codegen", () => {
+  let tmpRoot: string;
+
+  beforeEach(() => {
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "expo-assistant-test-"));
+    fs.mkdirSync(path.join(tmpRoot, "test-app"), { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  });
+
+  const readGenerated = () =>
+    fs.readFileSync(
+      path.join(tmpRoot, "test-app", "AppShortcutsBridge.generated.swift"),
+      "utf8"
+    );
+
+  it("always writes AppShortcutsBridge.generated.swift even when no shortcuts are declared", async () => {
+    await applyPlugin(baseConfig(), {}).runIosAppShortcutsCodegen(tmpRoot);
+    const swift = readGenerated();
+    expect(swift).toContain(
+      "public struct ExpoAssistantAppShortcuts: AppShortcutsProvider"
+    );
+    expect(swift).toContain("return [AppShortcut]()");
+  });
+
+  it("emits one AppShortcut per ios.appShortcuts entry", async () => {
+    await applyPlugin(baseConfig(), {
+      ios: {
+        appShortcuts: [
+          {
+            id: "search",
+            title: "Search",
+            phrases: ["Search for tacos in ${applicationName}"],
+            systemImageName: "magnifyingglass",
+          },
+          {
+            id: "play-music",
+            title: "Play Music",
+          },
+        ],
+      },
+    }).runIosAppShortcutsCodegen(tmpRoot);
+
+    const swift = readGenerated();
+    expect(swift).toContain('GenericVoiceIntent(intentId: "search")');
+    // Placeholder must be emitted as raw Swift interpolation — NOT escaped.
+    expect(swift).toContain(
+      'phrases: ["Search for tacos in \\(.applicationName)"]'
+    );
+    expect(swift).toContain('shortTitle: "Search"');
+    expect(swift).toContain('systemImageName: "magnifyingglass"');
+
+    expect(swift).toContain('GenericVoiceIntent(intentId: "play-music")');
+    expect(swift).toContain('shortTitle: "Play Music"');
+    // Default phrase when none specified is just the app name.
+    expect(swift).toContain('phrases: ["\\(.applicationName)"]');
+    // Default systemImageName is "mic" when not specified.
+    expect(swift).toContain('systemImageName: "mic"');
+  });
+
+  it("escapes quotes and backslashes in shortcut titles and phrases", async () => {
+    await applyPlugin(baseConfig(), {
+      ios: {
+        appShortcuts: [
+          {
+            id: "weird",
+            title: 'Title with "quotes" and \\slashes',
+            phrases: ['Phrase "with quotes" in ${applicationName}'],
+          },
+        ],
+      },
+    }).runIosAppShortcutsCodegen(tmpRoot);
+
+    const swift = readGenerated();
+    expect(swift).toContain('shortTitle: "Title with \\"quotes\\" and \\\\slashes"');
+    expect(swift).toContain(
+      'phrases: ["Phrase \\"with quotes\\" in \\(.applicationName)"]'
+    );
+  });
+
+  it("translates ${query} into the raw Swift parameter interpolation", async () => {
+    await applyPlugin(baseConfig(), {
+      ios: {
+        appShortcuts: [
+          {
+            id: "search",
+            title: "Search",
+            phrases: ["Search ${applicationName} for ${query}"],
+          },
+        ],
+      },
+    }).runIosAppShortcutsCodegen(tmpRoot);
+
+    const swift = readGenerated();
+    // Both tokens must emit as unescaped Swift interpolation.
+    expect(swift).toContain(
+      'phrases: ["Search \\(.applicationName) for \\(\\.$query)"]'
+    );
+  });
+
+  it("rejects AppShortcut phrases missing the ${applicationName} token", async () => {
+    await expect(
+      applyPlugin(baseConfig(), {
+        ios: {
+          appShortcuts: [
+            {
+              id: "bad",
+              title: "Bad",
+              phrases: ["Search for tacos"],
+            },
+          ],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot)
+    ).rejects.toThrow(/must contain "\$\{applicationName\}"/);
   });
 });
