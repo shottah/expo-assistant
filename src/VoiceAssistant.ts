@@ -64,25 +64,31 @@ export class VoiceAssistant {
     }
   }
 
+  /**
+   * Construct the singleton and complete native bridge setup. Safe to
+   * call concurrently — a failed initialization does NOT cache the
+   * broken instance, so a subsequent call will retry from scratch
+   * instead of returning a half-built singleton.
+   */
   static async initialize(
     config?: VoiceAssistantConfig
   ): Promise<VoiceAssistant> {
-    if (!VoiceAssistant.instance) {
-      VoiceAssistant.instance = new VoiceAssistant(config);
-      await VoiceAssistant.instance.setup();
+    if (VoiceAssistant.instance) {
+      return VoiceAssistant.instance;
     }
-    return VoiceAssistant.instance;
-  }
 
-  private async setup(): Promise<void> {
+    const instance = new VoiceAssistant(config);
     try {
-      await ExpoAssistantModule.initialize(this.config);
-      this.setupEventListeners();
-      this.initialized = true;
+      await ExpoAssistantModule.initialize(instance.config);
+      instance.setupEventListeners();
+      instance.initialized = true;
     } catch (error) {
       console.error("Failed to initialize VoiceAssistant:", error);
       throw error;
     }
+
+    VoiceAssistant.instance = instance;
+    return instance;
   }
 
   private setupEventListeners(): void {

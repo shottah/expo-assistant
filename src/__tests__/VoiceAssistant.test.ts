@@ -68,6 +68,19 @@ describe("VoiceAssistant", () => {
 
       await expect(VoiceAssistant.initialize()).rejects.toThrow("Init failed");
     });
+
+    it("should not cache a broken instance after a failed init", async () => {
+      // First call fails — singleton must NOT be cached.
+      mockModule.initialize.mockRejectedValueOnce(new Error("Init failed"));
+      await expect(VoiceAssistant.initialize()).rejects.toThrow("Init failed");
+
+      // Second call retries cleanly with a fresh instance and succeeds.
+      mockModule.initialize.mockResolvedValueOnce(undefined);
+      const instance = await VoiceAssistant.initialize();
+
+      expect(instance).toBeInstanceOf(VoiceAssistant);
+      expect(mockModule.initialize).toHaveBeenCalledTimes(2);
+    });
   });
 
   describe("Intent Registration", () => {
