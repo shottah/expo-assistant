@@ -1,12 +1,29 @@
 /**
- * Main config plugin for expo-assistant
+ * Top-level config plugin for expo-assistant.
+ *
+ * Composes the iOS + Android platform plugins, applies defaults to the
+ * user's props, and wraps the whole thing in `createRunOncePlugin` so
+ * accidentally composing this plugin twice (e.g. from a meta-plugin AND
+ * from app.json directly) is a no-op instead of doubling every side
+ * effect.
+ *
+ * Pattern matches every first-party Expo plugin we audited
+ * (expo-tracking-transparency, expo-camera, expo-notifications,
+ * expo-dev-client, expo-asset). See `.plan/07-plugin-audit.md § 7`.
  */
 
-import { ConfigPlugin, withPlugins } from "@expo/config-plugins";
+import {
+  ConfigPlugin,
+  createRunOncePlugin,
+  withPlugins,
+} from "@expo/config-plugins";
 
+import { withIOSVoiceIntents } from "./ios";
 import { ExpoAssistantPluginConfig } from "./types";
 import { withAndroidVoiceIntents } from "./withAndroidVoiceIntents";
-import { withIOSVoiceIntents } from "./withIOSVoiceIntents";
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const pkg = require("../../package.json");
 
 const withExpoAssistant: ConfigPlugin<ExpoAssistantPluginConfig> = (
   config,
@@ -38,5 +55,5 @@ const withExpoAssistant: ConfigPlugin<ExpoAssistantPluginConfig> = (
   ]);
 };
 
-export default withExpoAssistant;
+export default createRunOncePlugin(withExpoAssistant, pkg.name, pkg.version);
 export { ExpoAssistantPluginConfig, IntentCategory } from "./types";
