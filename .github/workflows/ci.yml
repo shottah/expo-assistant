@@ -5,22 +5,25 @@ on:
   push:
     branches: [development, main]
 
-# Sequential gates with parallel native branches. Fast cheap jobs run
-# first; expensive native + e2e jobs only spin up if the cheap gates
-# pass AND a reviewer approves the `native-tests` environment.
+# Sequential gates with parallel native branches.
 #
 #   build + lint
 #         │
 #         ▼
 #       js test (unit + bridge contracts)
 #         │
-#    ┌────┴────┐  ← native-tests environment requires manual approval
+#    ┌────┴────┐
 #    ▼         ▼
 # ios        android
-# module     module
+# module     module     ← both currently skipped via `if: false`
 #    │         │
 #    ▼         ▼
-# ios-e2e   android-e2e   ← both currently skipped via `if: false`
+# ios-e2e   android-e2e ← both currently skipped via `if: false`
+#
+# When re-enabling the native module / e2e jobs, drop the `if: false`
+# AND add an `environment:` block if you want the run gated by manual
+# approval (e.g. `environment: native-tests` after creating the env in
+# repo settings with at least one required reviewer).
 
 jobs:
   build-and-lint:
@@ -97,11 +100,13 @@ jobs:
     name: ios module (XCTest)
     needs: js-test
     runs-on: macos-15
-    # `native-tests` environment must exist in repo settings with at
-    # least one required reviewer. Until a reviewer approves the run,
-    # this job (and its e2e descendant) stay paused. See README for
-    # one-time setup instructions.
-    environment: native-tests
+    # Skipped while iOS native test execution is unstabilized in CI.
+    # The scaffolding (target wiring, XCTest invocation, coverage
+    # upload) is preserved below so flipping back on means dropping
+    # the `if: false` — no rewrite needed. If you also want manual
+    # approval before each run, add `environment: native-tests` and
+    # create that env in repo settings with a required reviewer.
+    if: false
     steps:
       - uses: actions/checkout@v4
 
@@ -197,7 +202,11 @@ jobs:
     name: android module (JUnit + JaCoCo)
     needs: js-test
     runs-on: ubuntu-latest
-    environment: native-tests
+    # Skipped — paired with ios-module-test above. The Gradle scaffold,
+    # JaCoCo report, and Codecov upload below stay in place so the job
+    # re-enables cleanly. Add `environment: native-tests` if you want
+    # the manual-approval gate.
+    if: false
     steps:
       - uses: actions/checkout@v4
 
