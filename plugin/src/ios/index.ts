@@ -10,6 +10,12 @@
  * (no fs, no mod plumbing) so each generator can be unit-tested in
  * isolation. See `.plan/07-plugin-audit.md § 1` for the full
  * rationale.
+ *
+ * **Before adding a new feature, read `plugin/AGENTS.md`.** It covers
+ * when to add a new mod vs extend an existing one, when to add a new
+ * codegen file vs extend types.ts, error message conventions
+ * (`pluginError`), Swift identifier validation, pbxproj idempotency,
+ * and the first-party precedents we mirror.
  */
 
 import { ConfigPlugin } from "@expo/config-plugins";

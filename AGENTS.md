@@ -142,7 +142,9 @@ When working in this repo, **prefer Apple's primary sources over your training d
 
 - `runbook/integrate-app-shortcut.md` — developer-facing integration guide. Keep this in sync when changing the public surface.
 - `ios/AppShortcutsBridge.swift` — pod-side `GenericVoiceIntent` declaration. Has inline `///` citations to the Apple docs for the types it uses.
-- `plugin/src/withIOSVoiceIntents.ts` — codegen logic. The phrase validation + slot rules in `buildPhraseLiteral` are pinned to the DTS engineer ruling cited above.
+- **`plugin/AGENTS.md`** — maintenance guide for the config plugin. **Read this before adding any new mod or codegen module.** Covers file layout, conventions (`pluginError` what/why/how, `project.hasFile()` idempotency, `createRunOncePlugin`), how to add new features (#30, #32, #33, #34 are all the same shape), test patterns, and the first-party precedents we mirror (notably `expo-widgets`).
+- `plugin/src/ios/codegen/*.ts` — pure codegen functions, one per Swift declaration kind. The phrase validation + slot rules in `PhraseLiteral.ts` are pinned to the Apple DTS engineer ruling cited above.
+- `plugin/src/ios/with*.ts` — single-concern mods. `withIOSAppShortcutsCodegen.ts` is the one that writes Swift to disk + registers it in pbxproj.
 - Generated `AppShortcutsBridge.generated.swift` — top-of-file header lists Apple doc URLs for every Apple type it touches. If you change what the plugin emits, update those citations too.
 
 ## Things NOT to do

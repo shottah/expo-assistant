@@ -9,8 +9,14 @@
  * "how do I marshal it back across the JS bridge".
  *
  * If you're looking for the file orchestration, see
- * `../withIOSAppShortcutsCodegen.ts`. If you're looking for what file
- * structure the package follows, see `.plan/07-plugin-audit.md` § 1.
+ * `../withIOSAppShortcutsCodegen.ts`.
+ *
+ * If you're about to add a new helper or extend the parameter type
+ * vocabulary, read `plugin/AGENTS.md` first — it covers the
+ * conventions (when to extend this file vs add a new codegen file,
+ * Swift identifier validation pattern, `pluginError` error structure,
+ * first-party precedents). The audit at `.plan/07-plugin-audit.md`
+ * has the historical rationale.
  */
 
 import type { AppShortcutParameter } from "../../types";
