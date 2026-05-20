@@ -1,6 +1,28 @@
 name: npm-publish
 
+# Two triggers, same destination:
+#
+#   - workflow_dispatch — fired by release-please.yml via
+#     `gh workflow run npm-publish.yml --ref <tag>` after it cuts a
+#     new release. This is the primary path for automated releases.
+#     `workflow_dispatch` is one of two event types GitHub exempts
+#     from the GITHUB_TOKEN trigger-suppression guardrail, which is
+#     why release-please can chain into it.
+#
+#   - push:tags v* — fallback for manual tag pushes (`git tag v0.x.y
+#     && git push --tags` from a developer machine). Such pushes
+#     originate from a real user, so the guardrail doesn't apply and
+#     this trigger fires normally.
+#
+# The actual publish work + the npm-release approval gate are identical
+# regardless of which trigger fired.
 on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish (e.g. v0.2.0). Used for the GH UI history + audit trail; the checkout uses github.ref which is set by the --ref passed to `gh workflow run`.'
+        required: true
+        type: string
   push:
     tags:
       - 'v*'
