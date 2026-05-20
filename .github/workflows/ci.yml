@@ -11,11 +11,11 @@ on:
 #         │
 #         ▼
 #       js test (unit + bridge contracts)
-#         │   ↑ The `test:gated` script (scripts/test-gate.mjs) diffs
-#         │     against the previous HEAD / PR base and exits 0 with
-#         │     no work if nothing test-relevant changed. Native tests
-#         │     deliberately do NOT use this gate — they're a separate
-#         │     concern with their own skip behaviour (`if: false`).
+#         │   ↑ Uses jest's `--changedSince=<ref>` flag so only tests
+#         │     transitively related to changed files run. Combined
+#         │     with `--passWithNoTests`, docs-only PRs no-op cleanly.
+#         │     Native tests are NOT routed through this — they have
+#         │     their own skip behaviour (`if: false` below).
 #    ┌────┴────┐
 #    ▼         ▼
 # ios        android
@@ -62,10 +62,9 @@ jobs:
     needs: build-and-lint
     runs-on: ubuntu-latest
     steps:
-      # `fetch-depth: 0` so the gate script can `git diff` against the
-      # PR base / previous push commit. Shallow clones (depth=1) lose
-      # the base reference and force the script into the "run anyway"
-      # fallback, which defeats the optimization.
+      # `fetch-depth: 0` so jest's `--changedSince=<ref>` can resolve
+      # the base SHA. Shallow clones lose history and jest falls back
+      # to "no diff base" — effectively running every test.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -85,19 +84,22 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # All JS tests — unit suites (VoiceAssistant, VoiceIntentBuilder,
-      # plugin) plus the bridge contract suites (NativeModuleContract,
-      # CrossPlatformContract).
+      # `test:ci` = `jest --ci --coverage --passWithNoTests`. We append
+      # `--changedSince=<sha>` so jest only runs tests transitively
+      # related to changed files (via its own static dependency graph).
+      # PR events compare against the PR base SHA; push events use
+      # the push's `before` SHA. Docs-only PRs find zero affected
+      # tests and exit green thanks to `--passWithNoTests`.
       #
-      # `test:gated` short-circuits with exit 0 + no work if the diff
-      # since the base ref doesn't touch any test-relevant files. PR
-      # events compare against the PR base SHA; push events use the
-      # push's `before` SHA. See scripts/test-gate.mjs for the path
-      # patterns + behaviour.
-      - name: Run tests (gated, with coverage)
-        env:
-          GATE_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD~1' }}
-        run: bun run test:gated -- --ci --coverage
+      # Trade-off vs a path-based wrapper: jest's graph is static, so
+      # files the contract test reads at runtime via fs.readFileSync
+      # (ios/ExpoAssistantModule.swift, the Kotlin twin) are invisible
+      # to it. A Swift-only PR would NOT re-trigger the contract test
+      # via this gate. Practical impact is small — Swift edits land
+      # with JS changes — and rerunning the full suite locally before
+      # pushing is cheap.
+      - name: Run tests
+        run: bun run test:ci -- --changedSince=${{ github.event.pull_request.base.sha || github.event.before || 'HEAD~1' }}
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4

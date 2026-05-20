@@ -26,7 +26,7 @@
     "lint": "expo-module lint",
     "test": "expo-module test",
     "test:jest": "jest",
-    "test:gated": "node scripts/test-gate.mjs",
+    "test:ci": "jest --ci --coverage --passWithNoTests",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:ios": "bash scripts/test-ios.sh",
