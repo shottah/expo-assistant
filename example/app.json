@@ -32,31 +32,44 @@
       [
         "expo-assistant",
         {
-          "intents": ["productivity"],
+          "intents": ["health"],
           "ios": {
-            "siriUsageDescription": "Schedule events via voice",
+            "siriUsageDescription": "Start workouts via voice",
+            "enums": [
+              {
+                "name": "WorkoutType",
+                "displayName": "Workout Type",
+                "cases": [
+                  { "id": "running", "display": "Running" },
+                  { "id": "cycling", "display": "Cycling" },
+                  { "id": "swimming", "display": "Swimming" },
+                  { "id": "yoga", "display": "Yoga" }
+                ]
+              }
+            ],
             "appShortcuts": [
               {
-                "id": "create-event",
-                "title": "Create Event",
-                "systemImageName": "calendar.badge.plus",
+                "id": "start-workout",
+                "title": "Start Workout",
+                "systemImageName": "figure.run",
                 "phrases": [
-                  "Create event in ${applicationName}",
-                  "Use ${applicationName} to create an event",
-                  "New event in ${applicationName}"
+                  "Start ${kind} workout in ${applicationName}",
+                  "Start a ${kind} workout in ${applicationName}",
+                  "Begin ${kind} in ${applicationName}",
+                  "Start workout in ${applicationName}"
                 ],
                 "parameters": [
                   {
-                    "name": "title",
-                    "type": "string",
-                    "title": "Title",
-                    "prompt": "What's the event called?"
+                    "name": "kind",
+                    "type": "enum:WorkoutType",
+                    "title": "Workout",
+                    "prompt": "Which workout?"
                   },
                   {
-                    "name": "when",
-                    "type": "string",
-                    "title": "When",
-                    "prompt": "When? (e.g. tomorrow at 9am)"
+                    "name": "duration",
+                    "type": "duration",
+                    "title": "Duration",
+                    "prompt": "How long?"
                   }
                 ]
               }

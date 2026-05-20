@@ -1,5 +1,23 @@
 import AppIntents
 
+// MARK: - Apple framework references
+//
+// The types used in this file are documented at:
+//   AppIntent              — https://developer.apple.com/documentation/appintents/appintent
+//   AppShortcutsProvider   — https://developer.apple.com/documentation/appintents/appshortcutsprovider
+//   AppShortcut            — https://developer.apple.com/documentation/appintents/appshortcut
+//   AppShortcutPhrase      — https://developer.apple.com/documentation/appintents/appshortcutphrase
+//   @Parameter             — https://developer.apple.com/documentation/appintents/parameter
+//   ParameterSummary       — https://developer.apple.com/documentation/appintents/parametersummary
+//   IntentResult           — https://developer.apple.com/documentation/appintents/intentresult
+//   IntentDonationManager  — https://developer.apple.com/documentation/appintents/intentdonationmanager
+//   LocalizedStringResource — https://developer.apple.com/documentation/foundation/localizedstringresource
+//
+// See AGENTS.md → "Reference docs" for the broader picture, including
+// which docs to consult for AppEnum (#29), AppEntity (#28),
+// AssistantSchemas (#30), and the AppShortcutPhrase parameter-type
+// constraint (#37 + https://developer.apple.com/forums/thread/770037).
+
 /// Bridge from the iOS App Intents framework into `ExpoAssistantModule`.
 ///
 /// This file ships the `GenericVoiceIntent` that every voice shortcut

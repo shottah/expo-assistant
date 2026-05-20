@@ -14,18 +14,22 @@ import {
   VoiceIntentBuilder,
 } from 'expo-assistant';
 
+type WorkoutKind = 'running' | 'cycling' | 'swimming' | 'yoga';
+type Duration = { value: number; unit: string };
+type WorkoutPayload = { kind: WorkoutKind; duration: Duration };
+
 type Status =
   | { state: 'pending' }
   | { state: 'registered' }
-  | { state: 'fired'; payload: { title: string; when: string } }
-  | { state: 'donated'; payload: { title: string; when: string } }
+  | { state: 'fired'; payload: WorkoutPayload }
+  | { state: 'donated'; payload: WorkoutPayload }
   | { state: 'error'; message: string };
 
-type EventRow = { title: string; when: string; at: string };
+type LogRow = WorkoutPayload & { at: string };
 
 export default function App() {
   const [status, setStatus] = useState<Status>({ state: 'pending' });
-  const [events, setEvents] = useState<EventRow[]>([]);
+  const [log, setLog] = useState<LogRow[]>([]);
   const assistantRef = useRef<VoiceAssistant | null>(null);
 
   useEffect(() => {
@@ -35,20 +39,24 @@ export default function App() {
         assistantRef.current = va;
 
         await va.registerIntent(
-          VoiceIntentBuilder.create<{ title: string; when: string }>()
-            .withId('create-event')
-            .withCategory(IntentCategory.PRODUCTIVITY)
-            .requiredParameter('title', { type: ParameterType.STRING })
-            .requiredParameter('when', { type: ParameterType.STRING })
+          VoiceIntentBuilder.create<WorkoutPayload>()
+            .withId('start-workout')
+            .withCategory(IntentCategory.HEALTH)
+            // `kind` arrives as the enum case's `id` string ('running' etc.)
+            // because Swift marshals AppEnum via .rawValue.
+            .requiredParameter('kind', { type: ParameterType.STRING })
+            // `duration` arrives as { value: Double, unit: String } — Swift
+            // marshals Measurement as a dict (unit is the symbol e.g. "min").
+            .requiredParameter('duration', { type: ParameterType.OBJECT })
             .withHandler({
-              handle: async ({ title, when }) => {
-                const row: EventRow = {
-                  title,
-                  when,
+              handle: async ({ kind, duration }) => {
+                const row: LogRow = {
+                  kind,
+                  duration,
                   at: new Date().toLocaleTimeString(),
                 };
-                setEvents((prev) => [row, ...prev].slice(0, 5));
-                setStatus({ state: 'fired', payload: { title, when } });
+                setLog((prev) => [row, ...prev].slice(0, 5));
+                setStatus({ state: 'fired', payload: { kind, duration } });
                 return { ok: true };
               },
             })
@@ -64,9 +72,12 @@ export default function App() {
   }, []);
 
   const donateSample = () => {
-    const sample = { title: 'team standup', when: 'tomorrow at 9am' };
+    const sample: WorkoutPayload = {
+      kind: 'cycling',
+      duration: { value: 30, unit: 'min' },
+    };
     assistantRef.current
-      ?.donateIntent('create-event', sample)
+      ?.donateIntent('start-workout', sample)
       .then(() => setStatus({ state: 'donated', payload: sample }))
       .catch((e: unknown) => {
         const message = e instanceof Error ? e.message : String(e);
@@ -79,28 +90,45 @@ export default function App() {
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={styles.header}>expo-assistant example</Text>
         <Text style={styles.subheader}>
-          Single-use-case multi-parameter demo
+          AppEnum + rich primitive type demo
         </Text>
 
-        <View style={styles.card} testID="card-create-event">
+        <View style={styles.card} testID="card-start-workout">
           <View style={styles.cardHead}>
-            <Text style={styles.cardIcon}>📅</Text>
-            <Text style={styles.cardTitle}>Create Event</Text>
+            <Text style={styles.cardIcon}>🏃</Text>
+            <Text style={styles.cardTitle}>Start Workout</Text>
             <StatusBadge status={status} />
           </View>
 
           <Text style={styles.cardSubtitle}>
-            Two required parameters: <Text style={styles.code}>title</Text> and{' '}
-            <Text style={styles.code}>when</Text>. iOS prompts for each in turn
-            when you invoke the shortcut without bound values.
+            Two parameters, two type families:{' '}
+            <Text style={styles.code}>kind</Text> is an AppEnum (so it can
+            appear in voice phrase slots),{' '}
+            <Text style={styles.code}>duration</Text> is a Measurement
+            (Swift) → <Text style={styles.code}>{`{ value, unit }`}</Text>{' '}
+            (JS).
           </Text>
 
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Try in Shortcuts.app → Library:</Text>
-            <Text style={styles.phrase}>"Create Event"</Text>
+            <Text style={styles.sectionLabel}>Voice (real device only):</Text>
+            <Text style={styles.phrase}>
+              "Start cycling workout in expo-assistant-example"
+            </Text>
             <Text style={styles.helper}>
-              Tap the tile → iOS asks "What's the event called?" → enter title →
-              "When?" → enter when → handler fires.
+              Siri extracts <Text style={styles.code}>kind=cycling</Text>{' '}
+              from the phrase, then prompts for duration.
+            </Text>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Library tap (simulator):</Text>
+            <Text style={styles.phrase}>
+              Shortcuts.app → Library → Start Workout
+            </Text>
+            <Text style={styles.helper}>
+              iOS prompts: "Which workout?" with a picker showing each
+              WorkoutType case → "How long?" with a duration input → handler
+              fires.
             </Text>
           </View>
 
@@ -112,10 +140,11 @@ export default function App() {
                   : 'Last donation:'}
               </Text>
               <Text style={styles.payloadLine}>
-                title = "{status.payload.title}"
+                kind = "{status.payload.kind}"
               </Text>
               <Text style={styles.payloadLine}>
-                when = "{status.payload.when}"
+                duration = {status.payload.duration.value}{' '}
+                {status.payload.duration.unit}
               </Text>
             </View>
           ) : null}
@@ -128,28 +157,23 @@ export default function App() {
 
           <View style={styles.actions}>
             <Button
-              title="Donate sample event"
+              title="Donate 30-minute cycling sample"
               onPress={donateSample}
-              testID="donate-create-event"
+              testID="donate-start-workout"
             />
           </View>
-
-          <Text style={styles.footnote}>
-            Voice slots like "Create event ${'${title}'} at ${'${when}'}" are
-            NOT supported today — Apple's AppShortcutPhrase only accepts
-            AppEntity / AppEnum types as slots. Free-form text is filled via
-            the prompt path above (#37, unblocked once #28 lands).
-          </Text>
         </View>
 
-        {events.length > 0 ? (
-          <View style={styles.card} testID="card-events">
-            <Text style={styles.cardTitle}>Events captured this session</Text>
-            {events.map((e, i) => (
-              <View key={i} style={styles.eventRow}>
-                <Text style={styles.eventTitle}>{e.title}</Text>
-                <Text style={styles.eventWhen}>{e.when}</Text>
-                <Text style={styles.eventAt}>{e.at}</Text>
+        {log.length > 0 ? (
+          <View style={styles.card} testID="card-log">
+            <Text style={styles.cardTitle}>Workouts captured this session</Text>
+            {log.map((e, i) => (
+              <View key={i} style={styles.logRow}>
+                <Text style={styles.logKind}>{e.kind}</Text>
+                <Text style={styles.logDuration}>
+                  {e.duration.value} {e.duration.unit}
+                </Text>
+                <Text style={styles.logAt}>{e.at}</Text>
               </View>
             ))}
           </View>
@@ -258,14 +282,7 @@ const styles = StyleSheet.create({
 
   actions: { flexDirection: 'row', marginTop: 4 },
 
-  footnote: {
-    fontSize: 10,
-    color: '#9ca3af',
-    fontStyle: 'italic',
-    marginTop: 8,
-  },
-
-  eventRow: {
+  logRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -273,7 +290,7 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: '#e5e7eb',
   },
-  eventTitle: { flex: 1, fontSize: 14, color: '#111', fontWeight: '500' },
-  eventWhen: { fontSize: 12, color: '#374151' },
-  eventAt: { fontSize: 11, color: '#9ca3af' },
+  logKind: { flex: 1, fontSize: 14, color: '#111', fontWeight: '500' },
+  logDuration: { fontSize: 12, color: '#374151' },
+  logAt: { fontSize: 11, color: '#9ca3af' },
 });
