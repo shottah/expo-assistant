@@ -1,6 +1,6 @@
 {
   "name": "expo-assistant",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Native voice assistant integration for Expo apps with Siri and Google Assistant support",
   "main": "build/index.js",
   "types": "build/index.d.ts",
