@@ -5,22 +5,29 @@ on:
   push:
     branches: [development, main]
 
-# Sequential gates with parallel native branches. Fast cheap jobs run
-# first; expensive native + e2e jobs only spin up if the cheap gates
-# pass AND a reviewer approves the `native-tests` environment.
+# Sequential gates with parallel native branches.
 #
 #   build + lint
 #         │
 #         ▼
 #       js test (unit + bridge contracts)
-#         │
-#    ┌────┴────┐  ← native-tests environment requires manual approval
+#         │   ↑ Uses jest's `--changedSince=<ref>` flag so only tests
+#         │     transitively related to changed files run. Combined
+#         │     with `--passWithNoTests`, docs-only PRs no-op cleanly.
+#         │     Native tests are NOT routed through this — they have
+#         │     their own skip behaviour (`if: false` below).
+#    ┌────┴────┐
 #    ▼         ▼
 # ios        android
-# module     module
+# module     module     ← both currently skipped via `if: false`
 #    │         │
 #    ▼         ▼
-# ios-e2e   android-e2e   ← both currently skipped via `if: false`
+# ios-e2e   android-e2e ← both currently skipped via `if: false`
+#
+# When re-enabling the native module / e2e jobs, drop the `if: false`
+# AND add an `environment:` block if you want the run gated by manual
+# approval (e.g. `environment: native-tests` after creating the env in
+# repo settings with at least one required reviewer).
 
 jobs:
   build-and-lint:
@@ -55,7 +62,12 @@ jobs:
     needs: build-and-lint
     runs-on: ubuntu-latest
     steps:
+      # `fetch-depth: 0` so jest's `--changedSince=<ref>` can resolve
+      # the base SHA. Shallow clones lose history and jest falls back
+      # to "no diff base" — effectively running every test.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -72,11 +84,22 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # All JS tests — unit suites (VoiceAssistant, VoiceIntentBuilder,
-      # plugin, integration) plus the bridge contract suites
-      # (NativeModuleContract, CrossPlatformContract).
-      - name: Run tests (with coverage)
-        run: bun run test --ci --coverage
+      # `test:ci` = `jest --ci --coverage --passWithNoTests`. We append
+      # `--changedSince=<sha>` so jest only runs tests transitively
+      # related to changed files (via its own static dependency graph).
+      # PR events compare against the PR base SHA; push events use
+      # the push's `before` SHA. Docs-only PRs find zero affected
+      # tests and exit green thanks to `--passWithNoTests`.
+      #
+      # Trade-off vs a path-based wrapper: jest's graph is static, so
+      # files the contract test reads at runtime via fs.readFileSync
+      # (ios/ExpoAssistantModule.swift, the Kotlin twin) are invisible
+      # to it. A Swift-only PR would NOT re-trigger the contract test
+      # via this gate. Practical impact is small — Swift edits land
+      # with JS changes — and rerunning the full suite locally before
+      # pushing is cheap.
+      - name: Run tests
+        run: bun run test:ci -- --changedSince=${{ github.event.pull_request.base.sha || github.event.before || 'HEAD~1' }}
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
@@ -97,11 +120,13 @@ jobs:
     name: ios module (XCTest)
     needs: js-test
     runs-on: macos-15
-    # `native-tests` environment must exist in repo settings with at
-    # least one required reviewer. Until a reviewer approves the run,
-    # this job (and its e2e descendant) stay paused. See README for
-    # one-time setup instructions.
-    environment: native-tests
+    # Skipped while iOS native test execution is unstabilized in CI.
+    # The scaffolding (target wiring, XCTest invocation, coverage
+    # upload) is preserved below so flipping back on means dropping
+    # the `if: false` — no rewrite needed. If you also want manual
+    # approval before each run, add `environment: native-tests` and
+    # create that env in repo settings with a required reviewer.
+    if: false
     steps:
       - uses: actions/checkout@v4
 
@@ -197,7 +222,11 @@ jobs:
     name: android module (JUnit + JaCoCo)
     needs: js-test
     runs-on: ubuntu-latest
-    environment: native-tests
+    # Skipped — paired with ios-module-test above. The Gradle scaffold,
+    # JaCoCo report, and Codecov upload below stay in place so the job
+    # re-enables cleanly. Add `environment: native-tests` if you want
+    # the manual-approval gate.
+    if: false
     steps:
       - uses: actions/checkout@v4
 

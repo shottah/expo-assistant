@@ -12,6 +12,20 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Manual-approval gate before the package goes live on npm. The
+    # GitHub Release itself is created by release-please when the
+    # release-please PR is merged — that happens BEFORE the v* tag
+    # is pushed, so this gate blocks the npm publish step only. The
+    # GitHub Release stays published regardless.
+    #
+    # ONE-TIME SETUP: create the `npm-release` environment in repo
+    # settings (Settings → Environments → New environment), add at
+    # least one Required reviewer. Until a reviewer approves the run
+    # for a given tag, this job stays paused — `npm view` won't show
+    # the new version even though the v* tag + GH Release exist.
+    environment:
+      name: npm-release
+      url: https://www.npmjs.com/package/expo-assistant
     steps:
       - uses: actions/checkout@v4
 
