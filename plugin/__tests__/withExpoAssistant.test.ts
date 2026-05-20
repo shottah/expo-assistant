@@ -504,7 +504,9 @@ describe("withExpoAssistant — iOS AppShortcuts codegen", () => {
           ],
         },
       }).runIosAppShortcutsCodegen(tmpRoot)
-    ).rejects.toThrow(/voice slots only work for AppEntity \/ AppEnum/);
+    ).rejects.toThrow(
+      /undeclared parameter[\s\S]+voice slots only work for AppEnum \/ AppEntity/
+    );
   });
 
   it("rejects AppShortcut phrases missing the ${applicationName} token", async () => {
@@ -703,7 +705,7 @@ describe("withExpoAssistant — iOS AppShortcuts codegen", () => {
         },
       }).runIosAppShortcutsCodegen(tmpRoot)
     ).rejects.toThrow(
-      /primitive-typed parameter[\s\S]+AppShortcutPhrase only accepts AppEntity \/ AppEnum/
+      /is type "string"[\s\S]+AppShortcutPhrase only accepts AppEntity \/ AppEnum/
     );
   });
 
@@ -740,5 +742,314 @@ describe("withExpoAssistant — iOS AppShortcuts codegen", () => {
 
     const swift = readGenerated();
     expect(swift).toContain('title: "Amount"');
+  });
+
+  // ── Rich primitive types (#29) ───────────────────────────────────────
+
+  it("maps `date` parameter to Swift Date and marshals via ISO8601 formatter", async () => {
+    await applyPlugin(baseConfig(), {
+      ios: {
+        appShortcuts: [
+          {
+            id: "scheduled",
+            title: "Scheduled",
+            parameters: [{ name: "when", type: "date" }],
+          },
+        ],
+      },
+    }).runIosAppShortcutsCodegen(tmpRoot);
+
+    const swift = readGenerated();
+    expect(swift).toContain("public var when: Date");
+    expect(swift).toContain(
+      '"when": _expoAssistantISO8601Formatter.string(from: when)'
+    );
+    // Helper formatter must be emitted exactly once when any Date param exists.
+    expect(swift).toContain("fileprivate let _expoAssistantISO8601Formatter");
+    expect(swift).toContain("import Foundation");
+  });
+
+  it("maps `duration` and `length` to Measurement and marshals as {value, unit}", async () => {
+    await applyPlugin(baseConfig(), {
+      ios: {
+        appShortcuts: [
+          {
+            id: "measured",
+            title: "Measured",
+            parameters: [
+              { name: "duration", type: "duration" },
+              { name: "distance", type: "length" },
+            ],
+          },
+        ],
+      },
+    }).runIosAppShortcutsCodegen(tmpRoot);
+
+    const swift = readGenerated();
+    expect(swift).toContain("public var duration: Measurement<UnitDuration>");
+    expect(swift).toContain("public var distance: Measurement<UnitLength>");
+    expect(swift).toContain(
+      '"duration": ["value": duration.value, "unit": duration.unit.symbol] as [String: Any]'
+    );
+    expect(swift).toContain(
+      '"distance": ["value": distance.value, "unit": distance.unit.symbol] as [String: Any]'
+    );
+  });
+
+  it("maps `url` parameter to Swift URL and marshals as absoluteString", async () => {
+    await applyPlugin(baseConfig(), {
+      ios: {
+        appShortcuts: [
+          {
+            id: "openurl",
+            title: "Open URL",
+            parameters: [{ name: "link", type: "url" }],
+          },
+        ],
+      },
+    }).runIosAppShortcutsCodegen(tmpRoot);
+
+    const swift = readGenerated();
+    expect(swift).toContain("public var link: URL");
+    expect(swift).toContain('"link": link.absoluteString');
+  });
+
+  it("omits the ISO8601 formatter when no Date parameters are declared", async () => {
+    await applyPlugin(baseConfig(), {
+      ios: {
+        appShortcuts: [
+          {
+            id: "no-date",
+            title: "ND",
+            parameters: [{ name: "x", type: "string" }],
+          },
+        ],
+      },
+    }).runIosAppShortcutsCodegen(tmpRoot);
+
+    const swift = readGenerated();
+    expect(swift).not.toContain("_expoAssistantISO8601Formatter");
+  });
+
+  // ── AppEnum support (#29) ────────────────────────────────────────────
+
+  it("generates an AppEnum-conforming Swift enum for each declared enum", async () => {
+    await applyPlugin(baseConfig(), {
+      ios: {
+        enums: [
+          {
+            name: "WorkoutType",
+            displayName: "Workout Type",
+            cases: [
+              { id: "running", display: "Running" },
+              { id: "cycling", display: "Cycling" },
+              { id: "swimming", display: "Swimming" },
+            ],
+          },
+        ],
+        appShortcuts: [
+          {
+            id: "start-workout",
+            title: "Start Workout",
+            parameters: [{ name: "kind", type: "enum:WorkoutType" }],
+          },
+        ],
+      },
+    }).runIosAppShortcutsCodegen(tmpRoot);
+
+    const swift = readGenerated();
+    expect(swift).toContain(
+      "public enum WorkoutType: String, AppEnum"
+    );
+    expect(swift).toContain("case running");
+    expect(swift).toContain("case cycling");
+    expect(swift).toContain("case swimming");
+    expect(swift).toContain(
+      'public static var typeDisplayRepresentation: TypeDisplayRepresentation = "Workout Type"'
+    );
+    expect(swift).toContain('.running: "Running"');
+    expect(swift).toContain('.cycling: "Cycling"');
+    expect(swift).toContain('.swimming: "Swimming"');
+
+    // Typed intent declares the parameter with the enum's Swift type
+    // and marshals via .rawValue.
+    expect(swift).toContain("public var kind: WorkoutType");
+    expect(swift).toContain('"kind": kind.rawValue');
+  });
+
+  it("allows ${enumParam} slots in phrases and emits raw Swift interpolation (the #37 unlock for enum-typed params)", async () => {
+    await applyPlugin(baseConfig(), {
+      ios: {
+        enums: [
+          {
+            name: "WorkoutType",
+            cases: [
+              { id: "running", display: "Running" },
+              { id: "cycling", display: "Cycling" },
+            ],
+          },
+        ],
+        appShortcuts: [
+          {
+            id: "start-workout",
+            title: "Start Workout",
+            phrases: ["Start ${kind} workout in ${applicationName}"],
+            parameters: [{ name: "kind", type: "enum:WorkoutType" }],
+          },
+        ],
+      },
+    }).runIosAppShortcutsCodegen(tmpRoot);
+
+    const swift = readGenerated();
+    expect(swift).toContain(
+      'phrases: ["Start \\(\\.$kind) workout in \\(.applicationName)"]'
+    );
+  });
+
+  it("throws when enum:Name references an undeclared enum", async () => {
+    await expect(
+      applyPlugin(baseConfig(), {
+        ios: {
+          enums: [
+            { name: "Mode", cases: [{ id: "a", display: "A" }] },
+          ],
+          appShortcuts: [
+            {
+              id: "x",
+              title: "X",
+              parameters: [{ name: "k", type: "enum:Unknown" }],
+            },
+          ],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot)
+    ).rejects.toThrow(/references enum "Unknown" which is not declared/);
+  });
+
+  it("rejects enum declarations with invalid Swift identifiers", async () => {
+    await expect(
+      applyPlugin(baseConfig(), {
+        ios: {
+          enums: [
+            { name: "1Bad", cases: [{ id: "a", display: "A" }] },
+          ],
+          appShortcuts: [],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot)
+    ).rejects.toThrow(/not a valid Swift identifier/);
+  });
+
+  it("rejects enum cases with invalid Swift identifiers", async () => {
+    await expect(
+      applyPlugin(baseConfig(), {
+        ios: {
+          enums: [
+            {
+              name: "Mode",
+              cases: [{ id: "bad case", display: "Bad" }],
+            },
+          ],
+          appShortcuts: [],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot)
+    ).rejects.toThrow(/case id "bad case" is not a valid Swift identifier/);
+  });
+
+  it("rejects enums declared with zero cases", async () => {
+    await expect(
+      applyPlugin(baseConfig(), {
+        ios: {
+          enums: [{ name: "Empty", cases: [] }],
+          appShortcuts: [],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot)
+    ).rejects.toThrow(/must declare at least one case/);
+  });
+
+  it("includes Apple framework reference URLs in the generated file header, conditionally", async () => {
+    // Minimal shortcut: only the base AppShortcut/Provider/Intent docs
+    // should appear — no enum / date / measurement / URL lines.
+    await applyPlugin(baseConfig(), {
+      ios: {
+        appShortcuts: [
+          {
+            id: "min",
+            title: "Min",
+            phrases: ["Run in ${applicationName}"],
+          },
+        ],
+      },
+    }).runIosAppShortcutsCodegen(tmpRoot);
+
+    let swift = readGenerated();
+    expect(swift).toContain(
+      "AppShortcutsProvider — https://developer.apple.com/documentation/appintents/appshortcutsprovider"
+    );
+    expect(swift).toContain(
+      "AppShortcut          — https://developer.apple.com/documentation/appintents/appshortcut"
+    );
+    // Type-specific doc URLs should NOT be listed when the corresponding
+    // feature isn't used. We assert against the URLs (not the bare type
+    // names, which can appear in surrounding prose comments).
+    expect(swift).not.toContain("documentation/appintents/appenum");
+    expect(swift).not.toContain("documentation/foundation/iso8601dateformatter");
+    expect(swift).not.toContain("documentation/foundation/measurement");
+    expect(swift).not.toContain("documentation/foundation/url");
+
+    // Rich app: enum + date + measurement + url + typed intent → every
+    // applicable doc URL should be listed.
+    await applyPlugin(baseConfig(), {
+      ios: {
+        enums: [
+          { name: "Mode", cases: [{ id: "a", display: "A" }] },
+        ],
+        appShortcuts: [
+          {
+            id: "rich",
+            title: "Rich",
+            phrases: ["Run in ${applicationName}"],
+            parameters: [
+              { name: "kind", type: "enum:Mode" },
+              { name: "when", type: "date" },
+              { name: "len", type: "length" },
+              { name: "link", type: "url" },
+            ],
+          },
+        ],
+      },
+    }).runIosAppShortcutsCodegen(tmpRoot);
+
+    swift = readGenerated();
+    expect(swift).toContain(
+      "@Parameter           — https://developer.apple.com/documentation/appintents/parameter"
+    );
+    expect(swift).toContain(
+      "AppEnum              — https://developer.apple.com/documentation/appintents/appenum"
+    );
+    expect(swift).toContain(
+      "ISO8601DateFormatter — https://developer.apple.com/documentation/foundation/iso8601dateformatter"
+    );
+    expect(swift).toContain(
+      "Measurement          — https://developer.apple.com/documentation/foundation/measurement"
+    );
+    expect(swift).toContain(
+      "URL                  — https://developer.apple.com/documentation/foundation/url"
+    );
+  });
+
+  it("still rejects ${rich-primitive-param} slots in phrases (date is not slottable)", async () => {
+    await expect(
+      applyPlugin(baseConfig(), {
+        ios: {
+          appShortcuts: [
+            {
+              id: "scheduled",
+              title: "Scheduled",
+              phrases: ["Schedule for ${when} in ${applicationName}"],
+              parameters: [{ name: "when", type: "date" }],
+            },
+          ],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot)
+    ).rejects.toThrow(/is type "date"[\s\S]+only accepts AppEntity \/ AppEnum/);
   });
 });

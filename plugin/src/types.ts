@@ -18,16 +18,61 @@ export enum IntentCategory {
  * One declared parameter on an AppShortcut. The plugin uses this to
  * generate a per-shortcut typed AppIntent Swift struct with a matching
  * `@Parameter` property.
+ *
+ * Primitive types (`string`, `number`, `boolean`, `date`, `duration`,
+ * `length`, `url`) cannot appear as voice phrase slots — Apple's
+ * `AppShortcutPhrase` only accepts `AppEntity` / `AppEnum` types. The
+ * plugin throws at prebuild if a phrase references a primitive
+ * parameter via `${paramName}`.
+ *
+ * `AppEnum`-typed parameters (`type: "enum:Name"` referencing a
+ * declared `ios.enums[]` entry) ARE voice-slottable. Use them when you
+ * want the user to be able to say the value as part of the phrase
+ * (e.g. "Start cycling workout in MyApp" → `kind: "cycling"`).
+ *
+ * `IntentFile` is deferred to its own slice — file handle lifecycle
+ * and binary payload bridging deserve dedicated treatment.
  */
 export interface AppShortcutParameter {
   /** Identifier used as the Swift property name AND the JS dict key the handler receives. Must be a valid identifier in both. */
   name: string;
-  /** Initial supported primitive types. Entity/enum types are #28/#29. */
-  type: "string" | "number" | "boolean";
+  /**
+   * Parameter type. Primitives (string/number/boolean) and rich
+   * primitives (date/duration/length/url) are filled via
+   * `requestValueDialog` prompts only — they are NOT voice-slottable.
+   * Enum types in the shape `"enum:<Name>"` reference a declared
+   * `ios.enums[]` entry and ARE voice-slottable per Apple's constraint.
+   */
+  type:
+    | "string"
+    | "number"
+    | "boolean"
+    | "date"
+    | "duration"
+    | "length"
+    | "url"
+    | `enum:${string}`;
   /** Display title used by `@Parameter(title:)`. Defaults to `name` capitalized. */
   title?: string;
   /** Prompt text iOS speaks/shows when the parameter is unbound at invocation time. Used as `requestValueDialog`. */
   prompt?: string;
+}
+
+/**
+ * A closed-set choice type the plugin generates as a Swift
+ * `AppEnum`-conforming struct. Used as the type of an
+ * AppShortcutParameter via `type: "enum:<Name>"`. AppEnum is one of
+ * the two types Apple's AppShortcutPhrase accepts as voice slots, so
+ * phrases like "Start ${kind} workout in ${applicationName}" become
+ * legal when `kind` is enum-typed.
+ */
+export interface AppEnumDeclaration {
+  /** Swift type name. Should be a valid Swift identifier (PascalCase by convention). */
+  name: string;
+  /** Display name used by `TypeDisplayRepresentation`. Defaults to `name`. */
+  displayName?: string;
+  /** Allowed case values. `id` is the raw Swift case + the value passed to JS; `display` is the human-readable label shown in pickers / spoken by Siri. */
+  cases: { id: string; display: string }[];
 }
 
 export interface ExpoAssistantPluginConfig {
@@ -63,6 +108,13 @@ export interface ExpoAssistantPluginConfig {
      * routed by VoiceAssistant to the registered JS handler with
      * matching `intent.id`.
      */
+    /**
+     * Closed-set enum types referenced by `appShortcuts[].parameters[].type`
+     * via the `enum:<Name>` syntax. Each generates a Swift `AppEnum`-
+     * conforming struct that becomes voice-slottable in phrases. See
+     * `AppEnumDeclaration` for the shape.
+     */
+    enums?: AppEnumDeclaration[];
     appShortcuts?: {
       id: string;
       title: string;
