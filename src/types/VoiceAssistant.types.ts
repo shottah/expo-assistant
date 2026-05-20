@@ -27,6 +27,42 @@ export enum PermissionStatus {
   UNAVAILABLE = "unavailable",
 }
 
+/**
+ * Minimum shape every AppEntity record must satisfy. `id` is the Swift
+ * AppEntity's primary key and must be globally unique within the
+ * entity type (iOS treats it as the identity for remembering bound
+ * parameter values across sessions). Additional properties matching
+ * the declared `ios.entities[].properties` shape are passed through to
+ * the generated Swift `<Name>Entity` struct.
+ */
+export interface EntityRecord {
+  id: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Developer-supplied resolver for an AppEntity type. Registered via
+ * `VoiceAssistant.registerEntityResolver(typeName, resolver)`. iOS
+ * calls one of these three methods at scan time depending on what the
+ * system needs:
+ *
+ *   - `matching(search)` — fuzzy text → entities. Drives Spotlight
+ *     autocomplete + Siri voice extraction.
+ *   - `resolve(ids)` — id list → entities. Reconciles remembered
+ *     parameter values across sessions.
+ *   - `suggested()` — proactive picks for "you may want this"
+ *     surfaces. Optional; defaults to empty.
+ *
+ * Each method runs on the JS thread, must respond within ~1 second
+ * (the pod-side EntityResolver timeout), and must return at minimum
+ * `{ id }` plus every property declared on the entity in `app.json`.
+ */
+export interface EntityResolver<T extends EntityRecord> {
+  matching: (search: string) => Promise<T[]>;
+  resolve: (ids: string[]) => Promise<T[]>;
+  suggested?: () => Promise<T[]>;
+}
+
 export interface VoiceParameter {
   name: string;
   type: ParameterType;

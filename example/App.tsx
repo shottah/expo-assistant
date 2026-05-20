@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
   SafeAreaView,
@@ -12,25 +12,38 @@ import {
   ParameterType,
   VoiceAssistant,
   VoiceIntentBuilder,
+  type EntityRecord,
 } from 'expo-assistant';
 
-type WorkoutKind = 'running' | 'cycling' | 'swimming' | 'yoga';
-type Duration = { value: number; unit: string };
-type WorkoutPayload = { kind: WorkoutKind; duration: Duration };
+// Hardcoded set of projects the example pretends to own. A real app
+// would source these from local storage / a server / etc. The resolver
+// below filters this in-memory.
+type Project = EntityRecord & { id: string; title: string; summary: string };
+
+const PROJECTS: Project[] = [
+  { id: 'atlas', title: 'Atlas', summary: 'API gateway revamp' },
+  { id: 'beacon', title: 'Beacon', summary: 'Observability platform' },
+  { id: 'cypress', title: 'Cypress', summary: 'Customer success workflows' },
+  { id: 'delta', title: 'Delta', summary: 'Reporting + analytics' },
+  { id: 'echo', title: 'Echo', summary: 'Voice + Siri integration' },
+];
 
 type Status =
   | { state: 'pending' }
   | { state: 'registered' }
-  | { state: 'fired'; payload: WorkoutPayload }
-  | { state: 'donated'; payload: WorkoutPayload }
+  | { state: 'fired'; payload: Project }
+  | { state: 'donated'; payload: Project }
   | { state: 'error'; message: string };
 
-type LogRow = WorkoutPayload & { at: string };
+type LogRow = Project & { at: string };
 
 export default function App() {
   const [status, setStatus] = useState<Status>({ state: 'pending' });
   const [log, setLog] = useState<LogRow[]>([]);
   const assistantRef = useRef<VoiceAssistant | null>(null);
+
+  // Stable count for the header.
+  const projectCount = useMemo(() => PROJECTS.length, []);
 
   useEffect(() => {
     (async () => {
@@ -38,25 +51,38 @@ export default function App() {
         const va = await VoiceAssistant.initialize({ debugMode: true });
         assistantRef.current = va;
 
+        // Wire up the entity resolver BEFORE registering the intent so
+        // any early scan-time queries from iOS have something to answer.
+        // Three methods: matching (fuzzy text), resolve (by id), suggested.
+        va.registerEntityResolver<Project>('Project', {
+          matching: async (search) => {
+            const q = search.toLowerCase().trim();
+            if (!q) return PROJECTS.slice(0, 5);
+            return PROJECTS.filter(
+              (p) =>
+                p.title.toLowerCase().includes(q) ||
+                p.summary.toLowerCase().includes(q)
+            );
+          },
+          resolve: async (ids) => PROJECTS.filter((p) => ids.includes(p.id)),
+          suggested: async () => PROJECTS.slice(0, 3),
+        });
+
         await va.registerIntent(
-          VoiceIntentBuilder.create<WorkoutPayload>()
-            .withId('start-workout')
-            .withCategory(IntentCategory.HEALTH)
-            // `kind` arrives as the enum case's `id` string ('running' etc.)
-            // because Swift marshals AppEnum via .rawValue.
-            .requiredParameter('kind', { type: ParameterType.STRING })
-            // `duration` arrives as { value: Double, unit: String } — Swift
-            // marshals Measurement as a dict (unit is the symbol e.g. "min").
-            .requiredParameter('duration', { type: ParameterType.OBJECT })
+          VoiceIntentBuilder.create<{ project: Project }>()
+            .withId('open-project')
+            .withCategory(IntentCategory.PRODUCTIVITY)
+            // Entity-typed parameters arrive as the full dict the JS
+            // resolver returned, with at minimum { id, ...properties }.
+            .requiredParameter('project', { type: ParameterType.OBJECT })
             .withHandler({
-              handle: async ({ kind, duration }) => {
+              handle: async ({ project }) => {
                 const row: LogRow = {
-                  kind,
-                  duration,
+                  ...project,
                   at: new Date().toLocaleTimeString(),
                 };
                 setLog((prev) => [row, ...prev].slice(0, 5));
-                setStatus({ state: 'fired', payload: { kind, duration } });
+                setStatus({ state: 'fired', payload: project });
                 return { ok: true };
               },
             })
@@ -72,12 +98,9 @@ export default function App() {
   }, []);
 
   const donateSample = () => {
-    const sample: WorkoutPayload = {
-      kind: 'cycling',
-      duration: { value: 30, unit: 'min' },
-    };
+    const sample = PROJECTS[0];
     assistantRef.current
-      ?.donateIntent('start-workout', sample)
+      ?.donateIntent('open-project', { project: sample })
       .then(() => setStatus({ state: 'donated', payload: sample }))
       .catch((e: unknown) => {
         const message = e instanceof Error ? e.message : String(e);
@@ -90,45 +113,57 @@ export default function App() {
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={styles.header}>expo-assistant example</Text>
         <Text style={styles.subheader}>
-          AppEnum + rich primitive type demo
+          AppEntity + EntityStringQuery — voice slot resolver demo
         </Text>
 
-        <View style={styles.card} testID="card-start-workout">
+        <View style={styles.card} testID="card-open-project">
           <View style={styles.cardHead}>
-            <Text style={styles.cardIcon}>🏃</Text>
-            <Text style={styles.cardTitle}>Start Workout</Text>
+            <Text style={styles.cardIcon}>📁</Text>
+            <Text style={styles.cardTitle}>Open Project</Text>
             <StatusBadge status={status} />
           </View>
 
           <Text style={styles.cardSubtitle}>
-            Two parameters, two type families:{' '}
-            <Text style={styles.code}>kind</Text> is an AppEnum (so it can
-            appear in voice phrase slots),{' '}
-            <Text style={styles.code}>duration</Text> is a Measurement
-            (Swift) → <Text style={styles.code}>{`{ value, unit }`}</Text>{' '}
-            (JS).
+            One entity-typed parameter: <Text style={styles.code}>project</Text>{' '}
+            (AppEntity). When iOS scans Spotlight / extracts a voice phrase,
+            it asks JS for matches via the registered resolver — same data
+            powers the Library tap picker and Siri's autocomplete.
           </Text>
 
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Voice (real device only):</Text>
-            <Text style={styles.phrase}>
-              "Start cycling workout in expo-assistant-example"
+            <Text style={styles.sectionLabel}>
+              Resolver inventory ({projectCount} projects):
             </Text>
-            <Text style={styles.helper}>
-              Siri extracts <Text style={styles.code}>kind=cycling</Text>{' '}
-              from the phrase, then prompts for duration.
-            </Text>
+            {PROJECTS.map((p) => (
+              <Text key={p.id} style={styles.phrase}>
+                <Text style={styles.code}>{p.id}</Text> — {p.title} ·{' '}
+                {p.summary}
+              </Text>
+            ))}
           </View>
 
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>Library tap (simulator):</Text>
             <Text style={styles.phrase}>
-              Shortcuts.app → Library → Start Workout
+              Shortcuts.app → Library → Open Project → autocomplete picker
             </Text>
             <Text style={styles.helper}>
-              iOS prompts: "Which workout?" with a picker showing each
-              WorkoutType case → "How long?" with a duration input → handler
-              fires.
+              The picker fetches its options from this card's resolver via
+              the entity bridge. Type "atl" → Atlas shows up.
+            </Text>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>
+              Voice slot (not yet working in approach A):
+            </Text>
+            <Text style={styles.helper}>
+              "Open <Text style={styles.code}>$&#123;project&#125;</Text> in
+              MyApp" extraction at install time requires the entity values
+              to be pre-indexed in Spotlight (linkd ingests phrases BEFORE
+              any JS runs). The snapshot-store enhancement (#41) ships
+              that path; today the Library tap flow exercises the same
+              resolver end-to-end.
             </Text>
           </View>
 
@@ -139,12 +174,12 @@ export default function App() {
                   ? 'Last invocation:'
                   : 'Last donation:'}
               </Text>
+              <Text style={styles.payloadLine}>id = "{status.payload.id}"</Text>
               <Text style={styles.payloadLine}>
-                kind = "{status.payload.kind}"
+                title = "{status.payload.title}"
               </Text>
               <Text style={styles.payloadLine}>
-                duration = {status.payload.duration.value}{' '}
-                {status.payload.duration.unit}
+                summary = "{status.payload.summary}"
               </Text>
             </View>
           ) : null}
@@ -157,22 +192,20 @@ export default function App() {
 
           <View style={styles.actions}>
             <Button
-              title="Donate 30-minute cycling sample"
+              title="Donate Atlas sample"
               onPress={donateSample}
-              testID="donate-start-workout"
+              testID="donate-open-project"
             />
           </View>
         </View>
 
         {log.length > 0 ? (
           <View style={styles.card} testID="card-log">
-            <Text style={styles.cardTitle}>Workouts captured this session</Text>
+            <Text style={styles.cardTitle}>Projects opened this session</Text>
             {log.map((e, i) => (
               <View key={i} style={styles.logRow}>
-                <Text style={styles.logKind}>{e.kind}</Text>
-                <Text style={styles.logDuration}>
-                  {e.duration.value} {e.duration.unit}
-                </Text>
+                <Text style={styles.logTitle}>{e.title}</Text>
+                <Text style={styles.logSummary}>{e.summary}</Text>
                 <Text style={styles.logAt}>{e.at}</Text>
               </View>
             ))}
@@ -261,7 +294,7 @@ const styles = StyleSheet.create({
 
   section: { marginTop: 4 },
   sectionLabel: { fontSize: 11, color: '#6b7280', textTransform: 'uppercase' },
-  phrase: { fontSize: 14, color: '#111', fontStyle: 'italic', marginTop: 2 },
+  phrase: { fontSize: 13, color: '#374151', marginTop: 2 },
   helper: { fontSize: 11, color: '#6b7280', marginTop: 4 },
 
   payload: {
@@ -290,7 +323,7 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: '#e5e7eb',
   },
-  logKind: { flex: 1, fontSize: 14, color: '#111', fontWeight: '500' },
-  logDuration: { fontSize: 12, color: '#374151' },
+  logTitle: { flex: 1, fontSize: 14, color: '#111', fontWeight: '500' },
+  logSummary: { fontSize: 12, color: '#374151', flex: 2 },
   logAt: { fontSize: 11, color: '#9ca3af' },
 });

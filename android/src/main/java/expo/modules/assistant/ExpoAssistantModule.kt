@@ -94,6 +94,25 @@ class ExpoAssistantModule : Module() {
             setDebugMode(enabled, promise)
         }
 
+        // iOS-only AppEntity query callback (see ExpoAssistantModule.swift
+        // + iOS issue #28). Android resolves its entity-equivalent
+        // surface (App Actions inventory) via shortcuts.xml capability
+        // bindings, not a request/response bridge. Stubbed here so the
+        // cross-platform AsyncFunction contract test stays green; the
+        // Android-side equivalent will land alongside the App Actions
+        // overhaul (#17 / #18).
+        AsyncFunction("respondToEntityQuery") { _: String, _: List<Map<String, Any?>>, promise: Promise ->
+            promise.resolve(Unit)
+        }
+
+        // iOS-only entity refresh trigger. On Android, App Actions
+        // capability bindings get refreshed automatically when
+        // shortcuts.xml changes, so no-op here. Wiring will land
+        // alongside the App Actions overhaul (#17 / #18).
+        AsyncFunction("updateAppShortcutParameters") { promise: Promise ->
+            promise.resolve(Unit)
+        }
+
         Function("handleAppAction") { intent: Intent ->
             handleAppAction(intent)
         }

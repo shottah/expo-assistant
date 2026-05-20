@@ -20,6 +20,16 @@ public class ExpoAssistantModule: Module {
 
     var onEventReceived: ((VoiceEvent) -> Void)?
 
+    /// Bridge that generated `<Name>Query: EntityStringQuery` structs
+    /// proxy through. Holds pending continuations keyed by requestId so
+    /// the JS resolver can respond out-of-band via the
+    /// `respondToEntityQuery` async function. Lazy so the back-reference
+    /// is set after `self` is fully constructed. See #28 + the
+    /// async-with-timeout architecture decision; the snapshot-store
+    /// follow-up (#41) will extend this with a system-process-readable
+    /// cache for backgrounded scanning.
+    public lazy var entityResolver: EntityResolver = EntityResolver(module: self)
+
     /// Singleton handle so the AppShortcuts bridge (declared as a
     /// non-Module-context struct via `AppShortcutsProvider`) can call
     /// back into the live module to emit invocation events. Weak so the
@@ -29,7 +39,7 @@ public class ExpoAssistantModule: Module {
     public func definition() -> ModuleDefinition {
         Name("ExpoAssistant")
 
-        Events("onIntentInvoked", "onIntentCompleted", "onIntentFailed")
+        Events("onIntentInvoked", "onIntentCompleted", "onIntentFailed", "onEntityQuery")
 
         OnCreate {
             ExpoAssistantModule.shared = self
@@ -137,6 +147,47 @@ public class ExpoAssistantModule: Module {
         }
 
         AsyncFunction("enableAppActions") { (promise: Promise) in
+            promise.resolve()
+        }
+
+        // JS-side callback for entity query results. The generated
+        // `<Name>Query: EntityStringQuery` Swift structs call into
+        // `entityResolver.resolve(...)`, which fires `onEntityQuery` to
+        // JS with a unique requestId; the JS resolver computes its
+        // matches and calls back via this AsyncFunction. The native
+        // resolver finds the pending continuation by requestId and
+        // resumes it. Late responses (after the 1s timeout already
+        // resolved the continuation) are silently dropped — see
+        // EntityResolver.resolveIfPending.
+        AsyncFunction("respondToEntityQuery") { (requestId: String, entities: [[String: Any]]) -> Void in
+            self.entityResolver.resolveIfPending(requestId: requestId, with: entities)
+        }
+
+        // JS signals iOS to re-query the generated AppShortcutsProvider's
+        // entity-typed parameters. iOS then calls `suggestedEntities()`
+        // on each associated EntityStringQuery — which round-trips
+        // through our resolver bridge to JS. Necessary because linkd
+        // ingests the metadata bundle at install time, but our JS
+        // resolver isn't alive yet then, so the entity phrase slots are
+        // rejected on the install scan. After JS has registered its
+        // resolvers, calling this re-validates the slots.
+        //
+        // The generated AppShortcutsProvider lives in the app target
+        // (outside the pod's module), so the pod can't call its static
+        // `updateAppShortcutParameters()` directly. The plugin codegen
+        // emits an `@objc` helper class on the app side that the pod
+        // looks up dynamically here.
+        //
+        // Apple ref:
+        // https://developer.apple.com/documentation/appintents/appshortcutsprovider/updateappshortcutparameters()
+        AsyncFunction("updateAppShortcutParameters") { (promise: Promise) in
+            if #available(iOS 16.4, *),
+               let bundleId = Bundle.main.bundleIdentifier {
+                let className = "\(bundleId).ExpoAssistantParametersRefresher"
+                if let cls = NSClassFromString(className) as? NSObject.Type {
+                    _ = cls.perform(NSSelectorFromString("refresh"))
+                }
+            }
             promise.resolve()
         }
     }
@@ -407,5 +458,89 @@ class IntentHandler: IntentHandlerProtocol {
         } else {
             completion(nil)
         }
+    }
+}
+
+// MARK: - EntityResolver
+
+/// Async request/response bridge for AppEntity queries.
+///
+/// Generated `<Name>Query: EntityStringQuery` Swift structs call into
+/// `resolve(typeName:kind:payload:)` whenever iOS asks the app for
+/// entity matches (Siri voice extraction, Spotlight autocomplete,
+/// Library tap entity picker). We pick a UUID, store a continuation,
+/// emit `onEntityQuery` to JS, and start a timeout Task. JS computes
+/// matches and calls back via the `respondToEntityQuery` AsyncFunction,
+/// which calls `resolveIfPending` here. Whichever fires first (JS
+/// response or timeout) wins; the loser is a no-op because the
+/// continuation has been removed from the pending map.
+///
+/// This is approach A from #28's architecture decision —
+/// async-with-timeout. The known limit is that backgrounded scans
+/// (where the JS runtime isn't alive) always time out to empty
+/// results. Snapshot-store mode (#41) will layer a system-process-
+/// readable cache on top to handle that case.
+///
+/// Note: this class itself is iOS 13+ (`async`/`await` floor). The
+/// generated `<Name>Query: EntityStringQuery` callers are
+/// `@available(iOS 16.0, *)` because App Intents is iOS 16+, so the
+/// resolver only runs from iOS 16+ contexts in practice.
+public final class EntityResolver: @unchecked Sendable {
+    /// Maximum wall-clock time we wait for the JS resolver before
+    /// resuming the iOS query with empty results. iOS itself drops a
+    /// scan after about 1-2 seconds in practice, so we time out well
+    /// inside that window to keep Spotlight responsive.
+    public static let timeoutNanoseconds: UInt64 = 1_000_000_000
+
+    private var pending: [String: CheckedContinuation<[[String: Any]], Never>] = [:]
+    private let lock = NSLock()
+    private weak var module: ExpoAssistantModule?
+
+    fileprivate init(module: ExpoAssistantModule) {
+        self.module = module
+    }
+
+    /// Ask the JS resolver registered for `typeName` to produce
+    /// entities for the given query `kind` (`"matching"`, `"for"`, or
+    /// `"suggested"`) with the `payload` arguments shaped per kind:
+    ///   - matching:  ["search": String]
+    ///   - for:       ["ids": [String]]
+    ///   - suggested: [:]
+    /// Returns an array of `[String: Any]` dicts shaped by the JS
+    /// resolver; the generated `<Name>Query` calls this and maps each
+    /// dict into a fully-typed `<Name>Entity`.
+    public func resolve(typeName: String, kind: String, payload: [String: Any]) async -> [[String: Any]] {
+        let requestId = UUID().uuidString
+        return await withCheckedContinuation { (continuation: CheckedContinuation<[[String: Any]], Never>) in
+            lock.lock()
+            pending[requestId] = continuation
+            lock.unlock()
+
+            module?.sendEvent("onEntityQuery", [
+                "requestId": requestId,
+                "typeName": typeName,
+                "kind": kind,
+                "payload": payload,
+            ])
+
+            // Race a timeout against the JS callback. Whichever resolves
+            // the continuation first wins; the other becomes a no-op
+            // when it finds the requestId already gone from `pending`.
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: EntityResolver.timeoutNanoseconds)
+                self?.resolveIfPending(requestId: requestId, with: [])
+            }
+        }
+    }
+
+    /// Called from JS via the `respondToEntityQuery` AsyncFunction OR
+    /// from the timeout Task. Safe to call repeatedly — only the first
+    /// caller for a given `requestId` resumes the continuation; the
+    /// rest no-op.
+    public func resolveIfPending(requestId: String, with value: [[String: Any]]) {
+        lock.lock()
+        let cont = pending.removeValue(forKey: requestId)
+        lock.unlock()
+        cont?.resume(returning: value)
     }
 }
