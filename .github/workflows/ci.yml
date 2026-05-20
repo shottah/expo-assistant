@@ -7,6 +7,9 @@ on:
 
 # Sequential gates with parallel native branches.
 #
+#       changes (path filter)
+#         │
+#         ▼ (skip everything if only docs / non-code changed)
 #   build + lint
 #         │
 #         ▼
@@ -20,14 +23,61 @@ on:
 #    ▼         ▼
 # ios-e2e   android-e2e ← both currently skipped via `if: false`
 #
+# Docs-only PRs (README, runbook/, AGENTS.md, .md files, example/, etc.)
+# skip the entire test pipeline — the `changes` job emits a `code`
+# output and every downstream job's `if:` consults it. Required-status
+# checks stay green because the jobs still queue and report; they just
+# no-op their work.
+#
 # When re-enabling the native module / e2e jobs, drop the `if: false`
 # AND add an `environment:` block if you want the run gated by manual
 # approval (e.g. `environment: native-tests` after creating the env in
 # repo settings with at least one required reviewer).
 
 jobs:
+  # Path-filter gate. Computes `outputs.code` = whether the diff since
+  # the previous HEAD touches anything the tests could conceivably
+  # observe — source code, native bridge files the contract test
+  # parses, build / test config, and this workflow itself. Documentation,
+  # the example app, release tooling, and IDE/editor configs are
+  # deliberately excluded so docs-only PRs return instantly.
+  #
+  # dorny/paths-filter handles the base-ref selection automatically:
+  # PR events compare against the PR base; push events compare against
+  # the push's `before` commit. New branches with no prior HEAD are
+  # treated as "all changed" so the first push doesn't skip silently.
+  changes:
+    name: detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - 'src/**'
+              - 'plugin/**'
+              - 'ios/**'
+              - 'android/**'
+              - 'app.plugin.js'
+              - 'expo-module.config.json'
+              - 'jest.config.js'
+              - 'jest.setup.js'
+              - 'tsconfig.json'
+              - 'eslint.config.js'
+              - '.eslintrc.js'
+              - 'package.json'
+              - 'bun.lock'
+              - '.github/workflows/ci.yml'
+
   build-and-lint:
     name: build + lint
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -55,7 +105,8 @@ jobs:
 
   js-test:
     name: js test
-    needs: build-and-lint
+    needs: [changes, build-and-lint]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
