@@ -4,16 +4,39 @@ on:
   push:
     branches: [development]
 
+# `actions: write` is needed by the final step — release-please uses
+# the default GITHUB_TOKEN to push the release tag, and GitHub
+# deliberately suppresses downstream workflow runs from GITHUB_TOKEN-
+# pushed tags (a guardrail against accidental loops). To re-trigger
+# the npm-publish workflow we fire an explicit `workflow_dispatch`
+# via `gh workflow run`, which IS one of the two event types
+# (workflow_dispatch + repository_dispatch) the guardrail exempts.
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
-      - uses: googleapis/release-please-action@v4
+      - id: release
+        uses: googleapis/release-please-action@v4
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           target-branch: development
+
+      # Only runs when release-please actually cut a release this run
+      # (i.e. its release PR was merged this push, not a no-op tick of
+      # the open release PR). `tag_name` is the freshly-created tag,
+      # e.g. `v0.2.0` — passed to npm-publish so it knows what to
+      # check out and what URL to surface in the GH UI.
+      - name: Trigger npm-publish workflow
+        if: ${{ steps.release.outputs.release_created }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run npm-publish.yml \
+            --ref ${{ steps.release.outputs.tag_name }} \
+            -f tag=${{ steps.release.outputs.tag_name }}
