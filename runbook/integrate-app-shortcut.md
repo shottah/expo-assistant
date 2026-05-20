@@ -19,32 +19,30 @@ bun add expo-assistant
     "ios": { "bundleIdentifier": "com.example.myapp" },
     "plugins": [
       ["expo-assistant", {
-        "intents": ["health"],
+        "intents": ["productivity"],
         "ios": {
-          "siriUsageDescription": "Start workouts via voice",
-          "enums": [
+          "siriUsageDescription": "Open projects via voice",
+          "entities": [
             {
-              "name": "WorkoutType",
-              "displayName": "Workout Type",
-              "cases": [
-                { "id": "running", "display": "Running" },
-                { "id": "cycling", "display": "Cycling" },
-                { "id": "swimming", "display": "Swimming" }
+              "name": "Project",
+              "displayName": "Project",
+              "displayProperty": "title",
+              "properties": [
+                { "name": "title",   "type": "string" },
+                { "name": "summary", "type": "string" }
               ]
             }
           ],
           "appShortcuts": [{
-            "id": "start-workout",
-            "title": "Start Workout",
-            "systemImageName": "figure.run",
+            "id": "open-project",
+            "title": "Open Project",
+            "systemImageName": "folder.fill",
             "phrases": [
-              "Start ${kind} workout in ${applicationName}",
-              "Begin ${kind} in ${applicationName}",
-              "Start workout in ${applicationName}"
+              "Open project in ${applicationName}",
+              "Show me a project in ${applicationName}"
             ],
             "parameters": [
-              { "name": "kind",     "type": "enum:WorkoutType", "title": "Workout", "prompt": "Which workout?" },
-              { "name": "duration", "type": "duration",         "title": "Duration", "prompt": "How long?" }
+              { "name": "project", "type": "entity:Project", "title": "Project", "prompt": "Which project?" }
             ]
           }]
         }
@@ -54,7 +52,7 @@ bun add expo-assistant
 }
 ```
 
-One shortcut, one enum + one Measurement. The `${kind}` slot in the phrase is voice-extractable ("Start cycling workout in MyApp" → `kind: "cycling"`) because the parameter is `AppEnum`-typed; primitives can't appear as slots. The handler receives `{ kind: "cycling", duration: { value: 30, unit: "min" } }`.
+One shortcut, one entity-typed parameter. iOS's Library tap UX shows an autocomplete picker that fetches its options from the JS-registered resolver. The handler receives `{ project: { id, title, summary } }`. Voice phrase slots for entity types (`Open ${project} in MyApp`) are gated on the snapshot-store enhancement (#41) — see Phrase rules below.
 
 ### Configuration reference
 
@@ -79,6 +77,7 @@ One shortcut, one enum + one Measurement. The `${kind}` slot in the phrase is vo
 | `alternativeAppNames` | `string[]` | no | `undefined` | Aliases iOS accepts in the `${applicationName}` slot. Use for short forms or pronunciations (e.g. `["MA", "My App"]`). Each adds an `INAlternativeAppName` plist entry. |
 | `appShortcuts` | `AppShortcut[]` | no | `[]` | Voice-triggered shortcuts that appear in Shortcuts.app / Spotlight / Siri. See `appShortcuts[]` table below. **Up to ~10 per app** (Apple limit). |
 | `enums` | `AppEnumDeclaration[]` | no | `undefined` | Closed-set picker types you can reference from `appShortcuts[].parameters[].type` via `"enum:<Name>"`. Each generates a Swift `AppEnum`-conforming type. AppEnum is one of two Apple-valid voice slot types — see Phrase rules below. |
+| `entities` | `AppEntityDeclaration[]` | no | `undefined` | Queryable app-data types you reference via `"entity:<Name>"`. Each generates a Swift `AppEntity` + `EntityStringQuery` pair that proxies through a JS-registered resolver (see `registerEntityResolver` below). Drives Library tap autocomplete pickers. Voice slot extraction at install time is gated on #41 (snapshot-store mode). |
 | `appGroups` | `string[]` | no | `undefined` | App Groups for sharing data with an Intent Extension. Auto-populated when `intentExtensionBundleId` is set. |
 | `siriKitDomains` | `string[]` | no | `undefined` | Sets `NSSiriKitDomains` — declares which legacy SiriKit domains your app participates in. |
 | `intentExtensionBundleId` | `string` | no | `undefined` | If set, the plugin scaffolds a legacy Intent Extension (pre-iOS 16 path). Most apps should leave this unset and rely on `appShortcuts`. |
@@ -116,8 +115,9 @@ One shortcut, one enum + one Measurement. The `${kind}` slot in the phrase is vo
 | `"length"` | `Measurement<UnitLength>` | `{ value: number, unit: string }` (e.g. `"km"`) | ❌ primitive |
 | `"url"` | `URL` | `string` (absoluteString) | ❌ primitive |
 | `"enum:<Name>"` | references the `<Name>` enum declared under `ios.enums` | the case's `id` string (e.g. `"running"`) | ✅ AppEnum — Apple-valid voice slot |
+| `"entity:<Name>"` | references the `<Name>` entity declared under `ios.entities` | the entity's full dict (e.g. `{ id, title, summary }`), pushed back by the JS resolver | ⚠️ AppEntity — Library tap picker works; voice slot extraction gated on #41 |
 
-`IntentFile`, `AppEntity`, and richer measurements (mass, temperature, etc.) are not yet supported.
+`IntentFile` and richer measurements (mass, temperature, etc.) are not yet supported.
 
 #### `enums[]` entry
 
@@ -127,17 +127,29 @@ One shortcut, one enum + one Measurement. The `${kind}` slot in the phrase is vo
 | `displayName` | `string` | no | `name` | Becomes `TypeDisplayRepresentation` — human-readable label iOS uses for the enum type itself (e.g. in the Shortcuts editor parameter chooser). |
 | `cases` | `{ id, display }[]` | **yes** | — | Allowed values. **At least one.** `id` is the raw Swift case AND the value JS receives via `.rawValue`; must be a valid Swift identifier. `display` is the human-readable label shown in pickers and spoken by Siri. |
 
+#### `entities[]` entry
+
+| Field | Type | Required | Default | Purpose |
+|---|---|---|---|---|
+| `name` | `string` | **yes** | — | Swift identifier (PascalCase by convention). The generated Swift struct is named `<name>Entity` and is referenced from parameters via `"entity:<Name>"`. |
+| `displayName` | `string` | no | `name` | `TypeDisplayRepresentation` shown in the Shortcuts editor + iOS surfaces that name the entity type itself. |
+| `displayProperty` | `string` | no | `"title"` if declared as string, else first string property | Which declared property to render as the entity's `DisplayRepresentation` title — shown in pickers, autocomplete, Siri's spoken responses. Must reference a string-typed property. |
+| `properties` | `{ name, type }[]` | **yes** | — | Properties on the entity beyond the implicit `id: String`. Types limited to `string`, `number`, `boolean`. At least one string property OR an explicit `displayProperty` is required so `DisplayRepresentation` has a title source. Each becomes a `@Property(title:)`-wrapped Swift `var` (required for AppEntity slot discovery — bare `let`s are invisible to iOS's query mechanism). |
+
+Each declared entity also requires a JS-side resolver registered via `VoiceAssistant.registerEntityResolver(typeName, resolver)` — see "Register a JS handler" below.
+
 #### Phrase template tokens
 
 | Token | Resolves to | Required in every phrase? |
 |---|---|---|
 | `${applicationName}` | Your app name (or any `alternativeAppNames` alias) | **yes** — iOS silently drops phrases without it |
 | `${enumParamName}` | Voice slot for an AppEnum-typed parameter; Siri extracts the spoken case from the user's phrase | optional — only legal when the named parameter is `"enum:<Name>"`-typed; plugin throws otherwise |
+| `${entityParamName}` | Voice slot for an AppEntity-typed parameter | optional — plugin accepts at codegen time, but linkd silently drops the phrase at install time because the JS resolver isn't alive yet to provide entity values. Use bare phrases + rely on the Library tap autocomplete picker. Voice-slot extraction unlocks once #41 (snapshot-store) ships. |
 
 **Phrase rules — non-negotiable:**
 
 1. Every phrase **must** include `${applicationName}` somewhere. iOS silently drops phrases without it; the plugin throws at prebuild.
-2. **Only AppEnum (and eventually AppEntity, #28) types can appear as voice slots.** Primitives — `string`, `number`, `boolean`, `date`, `duration`, `length`, `url` — are silently dropped by `linkd` ([Apple DTS engineer ruling](https://developer.apple.com/forums/thread/770037)). The plugin throws at prebuild on `${paramName}` for any primitive-typed param. For free-form text slots, model the value as an AppEntity once #28 lands; until then, use the prompt path.
+2. **Voice slots accept AppEnum and AppEntity only.** Primitives — `string`, `number`, `boolean`, `date`, `duration`, `length`, `url` — are silently dropped by `linkd` ([Apple DTS engineer ruling](https://developer.apple.com/forums/thread/770037)). The plugin throws at prebuild on `${paramName}` for any primitive-typed param. AppEnum slots fully work today. **AppEntity slots compile but get install-time-rejected by linkd** because the JS resolver isn't live yet to supply entity values — Library tap still works (it doesn't use phrase parsing); voice extraction unlocks once #41 (snapshot-store) ships.
 3. The prompt path always works: declare the parameter without a slot in the phrase. iOS fires `requestValueDialog` (sourced from your `prompt`) when the user invokes the shortcut without a bound value. Works for every type, including primitives.
 4. Declare 3–5 phrase variants per shortcut covering preposition swaps (`in`/`with`/`on`) and verb synonyms (`Start`/`Begin`/`Open`). iOS does not auto-synonymize connectors.
 5. Want a shorter spoken form? Add `ios.alternativeAppNames: ["MA", ...]` — iOS accepts any alias in the `${applicationName}` slot.
@@ -155,25 +167,46 @@ Generates `ios/<YourApp>/AppShortcutsBridge.generated.swift` and registers it in
 Register one `requiredParameter(...)` per parameter you declared in `app.json`. The handler receives a dict keyed by parameter name.
 
 ```ts
-import { VoiceAssistant, VoiceIntentBuilder, IntentCategory, ParameterType } from 'expo-assistant';
+import {
+  VoiceAssistant,
+  VoiceIntentBuilder,
+  IntentCategory,
+  ParameterType,
+  type EntityRecord,
+} from 'expo-assistant';
 
-type WorkoutKind = 'running' | 'cycling' | 'swimming';
-type Duration = { value: number; unit: string };
+type Project = EntityRecord & { id: string; title: string; summary: string };
 
 const va = await VoiceAssistant.initialize({ debugMode: true });
 
+// Register the entity resolver BEFORE the intent that references the
+// entity type. iOS will start asking the resolver as soon as a scan
+// triggers; having it ready avoids the first scan returning empty.
+va.registerEntityResolver<Project>('Project', {
+  matching: async (search) => {
+    const q = search.toLowerCase().trim();
+    if (!q) return ALL_PROJECTS.slice(0, 5);
+    return ALL_PROJECTS.filter(
+      (p) =>
+        p.title.toLowerCase().includes(q) ||
+        p.summary.toLowerCase().includes(q)
+    );
+  },
+  resolve: async (ids) => ALL_PROJECTS.filter((p) => ids.includes(p.id)),
+  suggested: async () => ALL_PROJECTS.slice(0, 3),
+});
+
 await va.registerIntent(
-  VoiceIntentBuilder.create<{ kind: WorkoutKind; duration: Duration }>()
-    .withId('start-workout')  // case-sensitive; must equal app.json `id` exactly
-    .withCategory(IntentCategory.HEALTH)
-    // Enum types arrive as the case's `id` string — narrow with a union type.
-    .requiredParameter('kind', { type: ParameterType.STRING })
-    // Measurement types arrive as { value, unit } objects.
-    .requiredParameter('duration', { type: ParameterType.OBJECT })
+  VoiceIntentBuilder.create<{ project: Project }>()
+    .withId('open-project')  // case-sensitive; must equal app.json `id` exactly
+    .withCategory(IntentCategory.PRODUCTIVITY)
+    // Entity-typed parameters arrive as the full dict the resolver
+    // returned, with at minimum { id, ...declaredProperties }.
+    .requiredParameter('project', { type: ParameterType.OBJECT })
     .withHandler({
-      handle: async ({ kind, duration }) => ({
+      handle: async ({ project }) => ({
         ok: true,
-        started: await startWorkout(kind, duration.value, duration.unit),
+        opened: await openProjectScreen(project.id),
       }),
     })
     .build()
@@ -182,7 +215,21 @@ await va.registerIntent(
 
 **Critical:** `withId(...)` must equal the `id` field in `app.json` byte-for-byte. The JS dispatcher does a case-sensitive map lookup. Mismatch is silent (handler never fires).
 
-**Marshaling reference:** when a parameter's `type` is a rich primitive or an enum, the JS side receives a documented shape, not the Swift type. Use the Parameter type vocabulary table above to know what to expect — `date` → ISO 8601 string, `duration` / `length` → `{ value, unit }`, `url` → string, `enum:<Name>` → the case's `id` string. The handler's TypeScript generic can encode this for compile-time safety.
+**Marshaling reference:** when a parameter's `type` is a rich primitive, enum, or entity, the JS side receives a documented shape, not the Swift type. Use the Parameter type vocabulary table above to know what to expect — `date` → ISO 8601 string, `duration` / `length` → `{ value, unit }`, `url` → string, `enum:<Name>` → the case's `id` string, `entity:<Name>` → the full entity dict.
+
+**EntityResolver contract** (`ios.entities[]` types only):
+
+```ts
+type EntityResolver<T extends EntityRecord> = {
+  matching: (search: string) => Promise<T[]>;  // free-form text → entities; Spotlight autocomplete
+  resolve: (ids: string[]) => Promise<T[]>;    // id list → entities; remembers prior bindings
+  suggested?: () => Promise<T[]>;              // proactive picks; optional, defaults to []
+};
+```
+
+- The pod-side bridge enforces a **1-second timeout** — slow resolvers degrade to empty results and the user sees no autocomplete / picker entries for that scan
+- Resolvers should be in-memory filters where possible; remote calls work but eat heavily into the timeout budget
+- iOS keeps asking the resolver as long as the JS runtime is alive; **when the app is backgrounded, queries time out** because JS isn't responding — see #41 for the snapshot-store enhancement that fixes backgrounded scanning
 
 ## 4. Build + reinstall
 
@@ -200,13 +247,14 @@ xcrun simctl launch booted com.example.myapp
 
 | Path | Trigger | Behavior |
 |---|---|---|
-| Siri voice — bare phrase | "Start workout in MyApp" | Prompts via `requestValueDialog` for every unbound required parameter, then fires |
-| Siri voice — with enum slot | "Start cycling workout in MyApp" | Siri extracts `kind: "cycling"` from the spoken phrase; still prompts for any unbound non-enum parameters; then fires |
+| Siri voice — bare phrase | "Open project in MyApp" | Prompts via `requestValueDialog` for every unbound required parameter (enum → picker, entity → autocomplete via resolver, primitive → typed input), then fires |
+| Siri voice — with enum slot | "Start cycling workout in MyApp" | Siri extracts `kind: "cycling"` from the spoken phrase, prompts for any remaining unbound parameters, then fires |
+| Siri voice — with entity slot | "Open Atlas in MyApp" (planned) | Currently NOT working — linkd rejects entity slot phrases at install time because the JS resolver isn't live yet. The snapshot-store enhancement (#41) ships this path. |
 | Spotlight | swipe down, type phrase, tap tile | Same as Library tap |
-| Shortcuts.app → Library | tap auto-listed tile under your app | Prompts for unbound required parameters one at a time (enum → picker UX, duration → native duration input, etc.); then fires |
+| Shortcuts.app → Library | tap auto-listed tile under your app | Prompts for unbound required parameters one at a time. Enum → picker. Entity → autocomplete fed by the JS resolver. Duration → native duration input. Primitive → typed input. Then fires. |
 | Long-press app icon | suggested actions menu | Same as Library tap |
 
-Note: voice-slot extraction only works for **AppEnum** parameters (and `AppEntity` once #28 lands). Primitive types fall back to the prompt path on every invocation surface.
+Note: voice-slot extraction works for **AppEnum** parameters today. **AppEntity** voice slots compile but get rejected by linkd at install scan; the Library tap path exercises the same resolver bridge and works end-to-end.
 
 Handler runs in your app's process — Expo runtime is up, no cold-start penalty if foregrounded or recent.
 
@@ -271,9 +319,9 @@ Key things to check:
 
 ## 10. Current limits
 
-- **Voice slots only work for AppEnum types** today. `AppEntity` slots — the way to make free-form text like search queries or note bodies voice-extractable — land with #28 + use `EntityStringQuery` to resolve any spoken string. Primitives (string / number / boolean / date / duration / length / url) can NEVER appear as phrase slots per Apple's design; they fall back to the prompt path.
+- **Voice slots fully work for AppEnum today.** **AppEntity slots work for Library tap (entity picker)** but voice extraction at install time is gated on #41 (snapshot-store mode) — linkd ingests phrases before the JS resolver is alive, so entity slot phrases are rejected on install.
+- **Backgrounded entity scans return empty.** When the host app is backgrounded or terminated, the JS resolver isn't alive, so the pod's 1-second timeout fires and Spotlight / picker UX gets empty results. #41 fixes this.
 - **No `IntentFile` yet.** File-handle lifecycle + binary payload bridging needs its own slice.
-- **No entities** — no autocomplete or disambiguation against app data. #28.
 - **No Apple Intelligence schema conformance** — custom AppIntent only. #30 (blocked on #35 research).
 - **No result presentation surfaces** — no `ProvidesDialog` / `ShowsSnippetView` / `OpensIntent` / `ReturnsValue`. #31.
 - **~10 AppShortcuts per app**, ~5–10 phrases per shortcut (Apple's practical budget).

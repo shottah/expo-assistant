@@ -15,6 +15,8 @@ import fs from "fs";
 import path from "path";
 
 import {
+  AppEntityDeclaration,
+  AppEntityProperty,
   AppEnumDeclaration,
   AppShortcutParameter,
   ExpoAssistantPluginConfig,
@@ -98,12 +100,14 @@ function withGeneratedAppShortcuts(
 
     const declaredEnums = props.ios?.enums ?? [];
     const enumNames = new Set(declaredEnums.map((e) => e.name));
+    const declaredEntities = props.ios?.entities ?? [];
+    const entityNames = new Set(declaredEntities.map((e) => e.name));
 
-    // Validate every enum-typed parameter references a declared enum
-    // and that no `enum:` parameter slips through with an unknown name.
+    // Validate every parametric reference resolves to a declared type.
     for (const s of shortcuts) {
       for (const p of s.parameters ?? []) {
-        if (typeof p.type === "string" && p.type.startsWith("enum:")) {
+        if (typeof p.type !== "string") continue;
+        if (p.type.startsWith("enum:")) {
           const referenced = p.type.slice("enum:".length);
           if (!enumNames.has(referenced)) {
             throw new Error(
@@ -111,11 +115,21 @@ function withGeneratedAppShortcuts(
                 `Add a matching { name: "${referenced}", cases: [...] } entry under ios.enums.`
             );
           }
+        } else if (p.type.startsWith("entity:")) {
+          const referenced = p.type.slice("entity:".length);
+          if (!entityNames.has(referenced)) {
+            throw new Error(
+              `[expo-assistant] Parameter "${p.name}" on shortcut "${s.id}" references entity "${referenced}" which is not declared in ios.entities[]. ` +
+                `Add a matching { name: "${referenced}", properties: [...] } entry under ios.entities.`
+            );
+          }
         }
       }
     }
 
     const enumStructs = declaredEnums.map(generateAppEnumStruct);
+    const entityStructs = declaredEntities.flatMap(generateAppEntityStructs);
+    const hasEntities = declaredEntities.length > 0;
     const typedIntentStructs: string[] = [];
     const appShortcutEntries: string[] = [];
 
@@ -160,6 +174,24 @@ function withGeneratedAppShortcuts(
     const enumBlock = enumStructs.length
       ? `\n${enumStructs.join("\n\n")}\n`
       : "";
+    // Refresher helper for `updateAppShortcutParameters()`. Lives in
+    // the app target so it can reference the generated
+    // `ExpoAssistantAppShortcuts` type. The pod looks it up via
+    // NSClassFromString — see ExpoAssistantModule.swift's
+    // `updateAppShortcutParameters` AsyncFunction.
+    const refresherBlock = hasEntities
+      ? `\n@available(iOS 16.4, *)
+@objc(ExpoAssistantParametersRefresher)
+public class ExpoAssistantParametersRefresher: NSObject {
+    @objc public static func refresh() {
+        ExpoAssistantAppShortcuts.updateAppShortcutParameters()
+    }
+}
+`
+      : "";
+    const entityBlock = entityStructs.length
+      ? `\n${entityStructs.join("\n\n")}\n`
+      : "";
     const typedStructsBlock = typedIntentStructs.length
       ? `\n${typedIntentStructs.join("\n\n")}\n`
       : "";
@@ -169,6 +201,7 @@ function withGeneratedAppShortcuts(
 
     const appleRefLines = buildAppleRefBlock({
       hasEnums: declaredEnums.length > 0,
+      hasEntities: declaredEntities.length > 0,
       hasDate: needsISO8601,
       hasMeasurement: shortcuts.some((s) =>
         (s.parameters ?? []).some((p) => p.type === "duration" || p.type === "length")
@@ -189,8 +222,9 @@ function withGeneratedAppShortcuts(
 // Shortcuts with a declared \`parameters\` array get a dedicated typed
 // AppIntent struct generated below; everything else falls back to
 // \`GenericVoiceIntent\` shipped by the pod for backwards compatibility.
-// Declared enums (ios.enums[]) are emitted first as AppEnum-conforming
-// types so the typed intent structs can reference them.
+// Declared enums (ios.enums[]) and entities (ios.entities[]) are
+// emitted first as AppEnum / AppEntity-conforming types so the typed
+// intent structs can reference them.
 //
 // Apple framework reference docs for the types used below:
 ${appleRefLines}
@@ -203,7 +237,7 @@ ${appleRefLines}
 import AppIntents
 import ExpoAssistant
 import Foundation
-${enumBlock}${iso8601Block}${typedStructsBlock}
+${enumBlock}${entityBlock}${iso8601Block}${typedStructsBlock}${refresherBlock}
 @available(iOS 16.0, *)
 public struct ExpoAssistantAppShortcuts: AppShortcutsProvider {
     public static var appShortcuts: [AppShortcut] {
@@ -248,6 +282,7 @@ function escapeSwift(s: string): string {
  */
 function buildAppleRefBlock(flags: {
   hasEnums: boolean;
+  hasEntities: boolean;
   hasDate: boolean;
   hasMeasurement: boolean;
   hasURL: boolean;
@@ -266,11 +301,22 @@ function buildAppleRefBlock(flags: {
       "//   IntentResult         — https://developer.apple.com/documentation/appintents/intentresult"
     );
   }
-  if (flags.hasEnums) {
+  if (flags.hasEnums || flags.hasEntities) {
     lines.push(
-      "//   AppEnum              — https://developer.apple.com/documentation/appintents/appenum",
       "//   TypeDisplayRepresentation — https://developer.apple.com/documentation/appintents/typedisplayrepresentation",
       "//   DisplayRepresentation — https://developer.apple.com/documentation/appintents/displayrepresentation"
+    );
+  }
+  if (flags.hasEnums) {
+    lines.push(
+      "//   AppEnum              — https://developer.apple.com/documentation/appintents/appenum"
+    );
+  }
+  if (flags.hasEntities) {
+    lines.push(
+      "//   AppEntity            — https://developer.apple.com/documentation/appintents/appentity",
+      "//   EntityStringQuery    — https://developer.apple.com/documentation/appintents/entitystringquery",
+      "//   EntityQuery          — https://developer.apple.com/documentation/appintents/entityquery"
     );
   }
   if (flags.hasDate) {
@@ -321,6 +367,10 @@ function isEnumType(type: AppShortcutParameter["type"]): boolean {
   return typeof type === "string" && type.startsWith("enum:");
 }
 
+function isEntityType(type: AppShortcutParameter["type"]): boolean {
+  return typeof type === "string" && type.startsWith("entity:");
+}
+
 function enumNameFromType(type: AppShortcutParameter["type"]): string {
   if (!isEnumType(type)) {
     throw new Error(
@@ -330,9 +380,21 @@ function enumNameFromType(type: AppShortcutParameter["type"]): string {
   return (type as string).slice("enum:".length);
 }
 
+function entityNameFromType(type: AppShortcutParameter["type"]): string {
+  if (!isEntityType(type)) {
+    throw new Error(
+      `[expo-assistant] entityNameFromType called with non-entity type: ${type}`
+    );
+  }
+  return (type as string).slice("entity:".length);
+}
+
 function swiftTypeFor(type: AppShortcutParameter["type"]): string {
   if (isEnumType(type)) {
     return enumNameFromType(type);
+  }
+  if (isEntityType(type)) {
+    return `${entityNameFromType(type)}Entity`;
   }
   switch (type) {
     case "string":
@@ -374,6 +436,7 @@ function swiftTypeFor(type: AppShortcutParameter["type"]): string {
  */
 function marshalExpr(p: AppShortcutParameter): string {
   if (isEnumType(p.type)) return `${p.name}.rawValue`;
+  if (isEntityType(p.type)) return `${p.name}.asDictionary()`;
   switch (p.type) {
     case "string":
     case "number":
@@ -442,6 +505,205 @@ ${caseLines}
 ${displayEntries}
     ]
 }`;
+}
+
+/**
+ * Generates two Swift structs per declared AppEntity:
+ *
+ *   1. `<Name>Entity: AppEntity` — Hashable, Identifiable, with the
+ *      developer-declared properties as stored `let`s, an `init(from
+ *      dict:)` that reconstructs from the JS-supplied dict, and an
+ *      `asDictionary()` helper that marshals back out for emitIntent.
+ *      DisplayRepresentation pulls its title from `displayProperty`
+ *      (defaulting to `"title"` or the first string property).
+ *
+ *   2. `<Name>Query: EntityStringQuery` — Apple's protocol that iOS
+ *      calls at scan time for matching / id-resolution / suggestions.
+ *      Each method round-trips through
+ *      `ExpoAssistantModule.shared?.entityResolver.resolve(...)` to
+ *      reach the JS-registered resolver. Methods return [] if the
+ *      module isn't live (backgrounded scans, etc.) — see #41 for the
+ *      snapshot-store enhancement that lifts that limitation.
+ *
+ * Validates that the entity has a usable `displayProperty` (must
+ * reference a declared string property) and rejects invalid Swift
+ * identifiers at prebuild time.
+ */
+function generateAppEntityStructs(decl: AppEntityDeclaration): string[] {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(decl.name)) {
+    throw new Error(
+      `[expo-assistant] entity name "${decl.name}" is not a valid Swift identifier`
+    );
+  }
+  if (decl.properties.length === 0) {
+    throw new Error(
+      `[expo-assistant] entity "${decl.name}" must declare at least one property`
+    );
+  }
+  for (const p of decl.properties) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(p.name)) {
+      throw new Error(
+        `[expo-assistant] entity "${decl.name}" property "${p.name}" is not a valid Swift identifier`
+      );
+    }
+  }
+
+  // Resolve display property: explicit > "title" if declared as string > first string property.
+  const stringProps = decl.properties.filter((p) => p.type === "string");
+  let displayProperty = decl.displayProperty;
+  if (displayProperty) {
+    const found = decl.properties.find((p) => p.name === displayProperty);
+    if (!found) {
+      throw new Error(
+        `[expo-assistant] entity "${decl.name}" displayProperty "${displayProperty}" does not match any declared property`
+      );
+    }
+    if (found.type !== "string") {
+      throw new Error(
+        `[expo-assistant] entity "${decl.name}" displayProperty "${displayProperty}" must reference a string property (got "${found.type}")`
+      );
+    }
+  } else {
+    const titleProp = decl.properties.find(
+      (p) => p.name === "title" && p.type === "string"
+    );
+    displayProperty = titleProp?.name ?? stringProps[0]?.name;
+    if (!displayProperty) {
+      throw new Error(
+        `[expo-assistant] entity "${decl.name}" must declare at least one string property OR specify displayProperty so DisplayRepresentation has a title source`
+      );
+    }
+  }
+
+  const structName = `${decl.name}Entity`;
+  const queryName = `${decl.name}Query`;
+  const displayNameEsc = escapeSwift(decl.displayName ?? decl.name);
+
+  // Property declarations on the Entity struct. iOS only treats
+  // properties as discoverable / queryable / slottable when they're
+  // tagged with `@Property(title:)` — bare `let`s extract into the
+  // actionsdata bundle as `properties: []` (the entity exists but has
+  // no surface for filters / pickers / phrase resolution). The DTS
+  // ruling in #37 said "AppEntity and AppEnum are the only allowed
+  // types"; the empirical follow-up here is "and the AppEntity must
+  // have @Property-tagged fields for its slot story to light up".
+  // id stays bare — it's the identifier, not a queryable property.
+  const propDecls = decl.properties
+    .map((p) => {
+      const titleEsc = escapeSwift(capitalize(p.name));
+      return `    @Property(title: "${titleEsc}")\n    public var ${p.name}: ${entityPropSwiftType(p)}`;
+    })
+    .join("\n\n");
+
+  // init(from dict:) reads each property out of the JS-supplied dict
+  // with a sensible default if the resolver omitted it (defensive —
+  // iOS may surface partial entity data from cache replays).
+  const initLines = decl.properties
+    .map((p) => `        self.${p.name} = ${entityReadExpr(p, "dict")}`)
+    .join("\n");
+
+  // asDictionary() reconstructs the JS-shape so emitIntent passes the
+  // entity through to the JS handler verbatim.
+  const asDictEntries = [
+    `            "id": id`,
+    ...decl.properties.map(
+      (p) => `            "${p.name}": ${p.name}`
+    ),
+  ].join(",\n");
+
+  const entitySwift = `@available(iOS 16.0, *)
+public struct ${structName}: AppEntity, IndexedEntity, Identifiable {
+    public let id: String
+${propDecls}
+
+    public static var typeDisplayRepresentation: TypeDisplayRepresentation = "${displayNameEsc}"
+    public static var defaultQuery = ${queryName}()
+
+    public var displayRepresentation: DisplayRepresentation {
+        DisplayRepresentation(title: "\\(${displayProperty})")
+    }
+
+    public init(from dict: [String: Any]) {
+        self.id = (dict["id"] as? String) ?? ""
+${initLines}
+    }
+
+    public func asDictionary() -> [String: Any] {
+        return [
+${asDictEntries}
+        ]
+    }
+
+    // AppEntity requires Hashable. @Property-wrapped fields don't
+    // synthesize Equatable / Hashable automatically, so we provide
+    // id-based conformance — every entity is uniquely identified by
+    // its id per Apple's AppEntity protocol.
+    public static func == (lhs: ${structName}, rhs: ${structName}) -> Bool {
+        return lhs.id == rhs.id
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+}`;
+
+  // EntityStringQuery: bridges Apple's three required hooks (matching,
+  // for ids, suggested) through the pod's EntityResolver into JS.
+  const querySwift = `@available(iOS 16.0, *)
+public struct ${queryName}: EntityStringQuery {
+    public init() {}
+
+    public func entities(for identifiers: [${structName}.ID]) async throws -> [${structName}] {
+        let raw = await (ExpoAssistantModule.shared?.entityResolver.resolve(
+            typeName: "${escapeSwift(decl.name)}",
+            kind: "for",
+            payload: ["ids": identifiers]
+        ) ?? [])
+        return raw.map { ${structName}(from: $0) }
+    }
+
+    public func entities(matching string: String) async throws -> [${structName}] {
+        let raw = await (ExpoAssistantModule.shared?.entityResolver.resolve(
+            typeName: "${escapeSwift(decl.name)}",
+            kind: "matching",
+            payload: ["search": string]
+        ) ?? [])
+        return raw.map { ${structName}(from: $0) }
+    }
+
+    public func suggestedEntities() async throws -> [${structName}] {
+        let raw = await (ExpoAssistantModule.shared?.entityResolver.resolve(
+            typeName: "${escapeSwift(decl.name)}",
+            kind: "suggested",
+            payload: [:]
+        ) ?? [])
+        return raw.map { ${structName}(from: $0) }
+    }
+}`;
+
+  return [entitySwift, querySwift];
+}
+
+function entityPropSwiftType(p: AppEntityProperty): string {
+  switch (p.type) {
+    case "string":
+      return "String";
+    case "number":
+      return "Double";
+    case "boolean":
+      return "Bool";
+  }
+}
+
+function entityReadExpr(p: AppEntityProperty, dictVar: string): string {
+  switch (p.type) {
+    case "string":
+      return `(${dictVar}["${p.name}"] as? String) ?? ""`;
+    case "number":
+      return `(${dictVar}["${p.name}"] as? Double) ?? 0`;
+    case "boolean":
+      return `(${dictVar}["${p.name}"] as? Bool) ?? false`;
+  }
 }
 
 /**
@@ -564,14 +826,14 @@ function buildPhraseLiteral(
             `Note: voice slots only work for AppEnum / AppEntity types (#37), not primitives.`
         );
       }
-      if (!isEnumType(param.type)) {
+      if (!isEnumType(param.type) && !isEntityType(param.type)) {
         throw new Error(
           `[expo-assistant] Phrase for "${intentId}" references "\${${token}}" as a voice slot, but "${token}" is type "${param.type}". ` +
             `Apple's AppShortcutPhrase only accepts AppEntity / AppEnum types as voice slots (https://developer.apple.com/forums/thread/770037) — primitives are silently dropped by linkd. ` +
-            `Either change "${token}" to an enum (declare under ios.enums[] and set type: "enum:<Name>") OR remove the slot and rely on requestValueDialog to prompt for "${token}". Tracked in #37.`
+            `Either change "${token}" to an enum/entity (declare under ios.enums[] / ios.entities[] and set type: "enum:<Name>" or "entity:<Name>") OR remove the slot and rely on requestValueDialog to prompt for "${token}". Tracked in #37.`
         );
       }
-      // Legal enum-typed slot: emit raw Swift parameter interpolation.
+      // Legal enum- or entity-typed slot: emit raw Swift parameter interpolation.
       parts.push(`\\(\\.$${token})`);
     }
 

@@ -1052,4 +1052,261 @@ describe("withExpoAssistant — iOS AppShortcuts codegen", () => {
       }).runIosAppShortcutsCodegen(tmpRoot)
     ).rejects.toThrow(/is type "date"[\s\S]+only accepts AppEntity \/ AppEnum/);
   });
+
+  // ── AppEntity support (#28) ──────────────────────────────────────────
+
+  it("generates an AppEntity + EntityStringQuery Swift pair for each declared entity", async () => {
+    await applyPlugin(baseConfig(), {
+      ios: {
+        entities: [
+          {
+            name: "Project",
+            displayName: "Project",
+            properties: [
+              { name: "title", type: "string" },
+              { name: "priority", type: "number" },
+            ],
+          },
+        ],
+        appShortcuts: [
+          {
+            id: "open-project",
+            title: "Open Project",
+            parameters: [{ name: "project", type: "entity:Project" }],
+          },
+        ],
+      },
+    }).runIosAppShortcutsCodegen(tmpRoot);
+
+    const swift = readGenerated();
+
+    // Entity struct: AppEntity conformance + Identifiable + properties
+    expect(swift).toContain(
+      "public struct ProjectEntity: AppEntity, IndexedEntity, Identifiable"
+    );
+    expect(swift).toContain("public let id: String");
+    expect(swift).toContain('@Property(title: "Title")\n    public var title: String');
+    expect(swift).toContain('@Property(title: "Priority")\n    public var priority: Double');
+    expect(swift).toContain(
+      'public static var typeDisplayRepresentation: TypeDisplayRepresentation = "Project"'
+    );
+    expect(swift).toContain("public static var defaultQuery = ProjectQuery()");
+
+    // displayRepresentation pulls the title property by default
+    expect(swift).toContain('DisplayRepresentation(title: "\\(title)")');
+
+    // init(from dict:) — reads each declared property
+    expect(swift).toContain(
+      '(dict["title"] as? String) ?? ""'
+    );
+    expect(swift).toContain(
+      '(dict["priority"] as? Double) ?? 0'
+    );
+
+    // asDictionary() marshals back to JS
+    expect(swift).toContain('"id": id');
+    expect(swift).toContain('"title": title');
+    expect(swift).toContain('"priority": priority');
+
+    // EntityStringQuery proxies all three required methods through the
+    // pod's EntityResolver bridge.
+    expect(swift).toContain(
+      "public struct ProjectQuery: EntityStringQuery"
+    );
+    expect(swift).toContain(
+      'ExpoAssistantModule.shared?.entityResolver.resolve(\n            typeName: "Project",\n            kind: "matching"'
+    );
+    expect(swift).toContain('kind: "for"');
+    expect(swift).toContain('kind: "suggested"');
+
+    // Typed intent declares the param with the generated entity type.
+    expect(swift).toContain("public var project: ProjectEntity");
+    expect(swift).toContain('"project": project.asDictionary()');
+  });
+
+  it("allows ${entityParam} slots in phrases and emits raw Swift interpolation", async () => {
+    await applyPlugin(baseConfig(), {
+      ios: {
+        entities: [
+          {
+            name: "Project",
+            properties: [{ name: "title", type: "string" }],
+          },
+        ],
+        appShortcuts: [
+          {
+            id: "open-project",
+            title: "Open Project",
+            phrases: ["Open ${project} in ${applicationName}"],
+            parameters: [{ name: "project", type: "entity:Project" }],
+          },
+        ],
+      },
+    }).runIosAppShortcutsCodegen(tmpRoot);
+
+    const swift = readGenerated();
+    expect(swift).toContain(
+      'phrases: ["Open \\(\\.$project) in \\(.applicationName)"]'
+    );
+  });
+
+  it("throws when entity:Name references an undeclared entity", async () => {
+    await expect(
+      applyPlugin(baseConfig(), {
+        ios: {
+          entities: [
+            {
+              name: "Project",
+              properties: [{ name: "title", type: "string" }],
+            },
+          ],
+          appShortcuts: [
+            {
+              id: "x",
+              title: "X",
+              parameters: [{ name: "ref", type: "entity:Unknown" }],
+            },
+          ],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot)
+    ).rejects.toThrow(/references entity "Unknown" which is not declared/);
+  });
+
+  it("rejects entity declarations with invalid Swift identifiers", async () => {
+    await expect(
+      applyPlugin(baseConfig(), {
+        ios: {
+          entities: [
+            {
+              name: "1Bad",
+              properties: [{ name: "title", type: "string" }],
+            },
+          ],
+          appShortcuts: [],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot)
+    ).rejects.toThrow(/entity name "1Bad" is not a valid Swift identifier/);
+  });
+
+  it("rejects entity properties with invalid Swift identifiers", async () => {
+    await expect(
+      applyPlugin(baseConfig(), {
+        ios: {
+          entities: [
+            {
+              name: "Project",
+              properties: [{ name: "bad name", type: "string" }],
+            },
+          ],
+          appShortcuts: [],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot)
+    ).rejects.toThrow(/property "bad name" is not a valid Swift identifier/);
+  });
+
+  it("rejects entities declared with zero properties", async () => {
+    await expect(
+      applyPlugin(baseConfig(), {
+        ios: {
+          entities: [{ name: "Empty", properties: [] }],
+          appShortcuts: [],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot)
+    ).rejects.toThrow(/must declare at least one property/);
+  });
+
+  it("rejects entities with no string property usable for DisplayRepresentation when displayProperty is omitted", async () => {
+    await expect(
+      applyPlugin(baseConfig(), {
+        ios: {
+          entities: [
+            {
+              name: "Numeric",
+              properties: [{ name: "count", type: "number" }],
+            },
+          ],
+          appShortcuts: [],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot)
+    ).rejects.toThrow(
+      /must declare at least one string property OR specify displayProperty/
+    );
+  });
+
+  it("rejects displayProperty that references a non-string property", async () => {
+    await expect(
+      applyPlugin(baseConfig(), {
+        ios: {
+          entities: [
+            {
+              name: "Mismatched",
+              displayProperty: "rank",
+              properties: [
+                { name: "name", type: "string" },
+                { name: "rank", type: "number" },
+              ],
+            },
+          ],
+          appShortcuts: [],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot)
+    ).rejects.toThrow(
+      /displayProperty "rank" must reference a string property/
+    );
+  });
+
+  it("honors an explicit displayProperty over the default 'title' / first-string heuristic", async () => {
+    await applyPlugin(baseConfig(), {
+      ios: {
+        entities: [
+          {
+            name: "Project",
+            displayProperty: "name",
+            properties: [
+              { name: "name", type: "string" },
+              { name: "title", type: "string" },
+            ],
+          },
+        ],
+        appShortcuts: [
+          {
+            id: "x",
+            title: "X",
+            parameters: [{ name: "p", type: "entity:Project" }],
+          },
+        ],
+      },
+    }).runIosAppShortcutsCodegen(tmpRoot);
+
+    const swift = readGenerated();
+    expect(swift).toContain('DisplayRepresentation(title: "\\(name)")');
+  });
+
+  it("emits AppEntity / EntityStringQuery Apple-doc URLs only when entities are declared", async () => {
+    await applyPlugin(baseConfig(), {
+      ios: {
+        entities: [
+          {
+            name: "Project",
+            properties: [{ name: "title", type: "string" }],
+          },
+        ],
+        appShortcuts: [
+          {
+            id: "x",
+            title: "X",
+            parameters: [{ name: "p", type: "entity:Project" }],
+          },
+        ],
+      },
+    }).runIosAppShortcutsCodegen(tmpRoot);
+
+    const swift = readGenerated();
+    expect(swift).toContain(
+      "AppEntity            — https://developer.apple.com/documentation/appintents/appentity"
+    );
+    expect(swift).toContain(
+      "EntityStringQuery    — https://developer.apple.com/documentation/appintents/entitystringquery"
+    );
+  });
 });

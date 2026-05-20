@@ -32,44 +32,36 @@
       [
         "expo-assistant",
         {
-          "intents": ["health"],
+          "intents": ["productivity"],
           "ios": {
-            "siriUsageDescription": "Start workouts via voice",
-            "enums": [
+            "siriUsageDescription": "Open projects via voice",
+            "entities": [
               {
-                "name": "WorkoutType",
-                "displayName": "Workout Type",
-                "cases": [
-                  { "id": "running", "display": "Running" },
-                  { "id": "cycling", "display": "Cycling" },
-                  { "id": "swimming", "display": "Swimming" },
-                  { "id": "yoga", "display": "Yoga" }
+                "name": "Project",
+                "displayName": "Project",
+                "displayProperty": "title",
+                "properties": [
+                  { "name": "title", "type": "string" },
+                  { "name": "summary", "type": "string" }
                 ]
               }
             ],
             "appShortcuts": [
               {
-                "id": "start-workout",
-                "title": "Start Workout",
-                "systemImageName": "figure.run",
+                "id": "open-project",
+                "title": "Open Project",
+                "systemImageName": "folder.fill",
                 "phrases": [
-                  "Start ${kind} workout in ${applicationName}",
-                  "Start a ${kind} workout in ${applicationName}",
-                  "Begin ${kind} in ${applicationName}",
-                  "Start workout in ${applicationName}"
+                  "Open project in ${applicationName}",
+                  "Open a project in ${applicationName}",
+                  "Show me a project in ${applicationName}"
                 ],
                 "parameters": [
                   {
-                    "name": "kind",
-                    "type": "enum:WorkoutType",
-                    "title": "Workout",
-                    "prompt": "Which workout?"
-                  },
-                  {
-                    "name": "duration",
-                    "type": "duration",
-                    "title": "Duration",
-                    "prompt": "How long?"
+                    "name": "project",
+                    "type": "entity:Project",
+                    "title": "Project",
+                    "prompt": "Which project?"
                   }
                 ]
               }

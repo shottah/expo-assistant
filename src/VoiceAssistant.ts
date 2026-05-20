@@ -8,6 +8,8 @@ import {
   VoiceEvent,
   VoiceEventListener,
   IntentResponse,
+  EntityRecord,
+  EntityResolver,
 } from "./types/VoiceAssistant.types";
 
 /**
@@ -55,6 +57,7 @@ export class VoiceAssistant {
   private static instance: VoiceAssistant | null = null;
   private config: VoiceAssistantConfig = {};
   private registeredIntents: Map<string, IntentRegistration> = new Map();
+  private entityResolvers: Map<string, EntityResolver<EntityRecord>> = new Map();
   private eventListeners: Map<string, VoiceEventListener[]> = new Map();
   private initialized = false;
 
@@ -110,6 +113,14 @@ export class VoiceAssistant {
     ExpoAssistantModule.addListener(
       "onIntentFailed",
       this.handleIntentFailed.bind(this)
+    );
+    // AppEntity query request/response bridge — pod's EntityResolver
+    // fires onEntityQuery; JS resolves matches and calls back via
+    // ExpoAssistantModule.respondToEntityQuery. See registerEntityResolver
+    // below for the developer-facing API.
+    ExpoAssistantModule.addListener(
+      "onEntityQuery",
+      this.handleEntityQuery.bind(this)
     );
   }
 
@@ -374,6 +385,122 @@ export class VoiceAssistant {
   async setDebugMode(enabled: boolean): Promise<void> {
     this.config.debugMode = enabled;
     await ExpoAssistantModule.setDebugMode(enabled);
+  }
+
+  /**
+   * Register a JS-side resolver for an AppEntity type declared in
+   * `app.json` → `ios.entities[]`. The resolver answers three kinds of
+   * query that iOS makes at scan time:
+   *
+   *   - `matching(search)` — fuzzy lookup against a free-form spoken
+   *     phrase. Drives Spotlight autocomplete + Siri voice extraction.
+   *   - `resolve(ids)` — given a list of entity ids (which iOS may
+   *     have remembered from a prior invocation), return the matching
+   *     entity dicts. Drives intent re-runs against previously-bound
+   *     values.
+   *   - `suggested()` — optional. Returns a list of proactive
+   *     suggestions iOS may surface (recent / frequent items, etc.).
+   *     If omitted, an empty list is used.
+   *
+   * The resolver must return entity dicts with at minimum `{ id }` plus
+   * every property declared on the entity in `app.json` (the plugin
+   * codegen reads those keys to populate the generated Swift
+   * `<Name>Entity` struct). Extra keys are ignored.
+   *
+   * The pod-side `EntityResolver` enforces a 1-second timeout —
+   * resolvers that exceed it will see iOS receive an empty result and
+   * the user UX degrades (no autocomplete, no voice extraction for
+   * that scan). Keep matching logic fast (in-memory filter typical).
+   *
+   * Approach A — async-with-timeout. When the host app is backgrounded
+   * and JS isn't alive, queries time out and return empty. The
+   * snapshot-store follow-up (#41) will layer system-process-readable
+   * persistence on top so backgrounded scanning works too.
+   */
+  registerEntityResolver<T extends EntityRecord>(
+    typeName: string,
+    resolver: EntityResolver<T>
+  ): void {
+    this.entityResolvers.set(typeName, resolver as EntityResolver<EntityRecord>);
+    // Tell iOS to re-query AppShortcuts parameters now that this
+    // resolver is live. iOS's linkd ingested the metadata at install
+    // time (before any JS ran), so phrase slots for our entity types
+    // were rejected on the first scan. After we register, iOS will
+    // call back into suggestedEntities and accept the slots.
+    void ExpoAssistantModule.updateAppShortcutParameters().catch(() => {});
+  }
+
+  unregisterEntityResolver(typeName: string): void {
+    this.entityResolvers.delete(typeName);
+  }
+
+  /**
+   * Force iOS to re-query the AppShortcutsProvider's entity-typed
+   * parameter values. Normally you don't need to call this manually —
+   * `registerEntityResolver` auto-triggers it. Use this when your
+   * resolver's underlying data set has changed in a way that should
+   * be reflected in Spotlight / Siri immediately (e.g. user just
+   * created a new Project they expect to be voice-targetable).
+   */
+  async updateAppShortcutParameters(): Promise<void> {
+    await ExpoAssistantModule.updateAppShortcutParameters();
+  }
+
+  /**
+   * Native → JS: pod's EntityResolver has fired an `onEntityQuery`
+   * event and is waiting on `respondToEntityQuery` to resolve its
+   * continuation. We look up the registered resolver by typeName,
+   * dispatch by `kind`, and pass the result back.
+   *
+   * If no resolver is registered (or it throws / the kind is unknown),
+   * we respond with an empty array — same end-state as a timeout, so
+   * iOS's scan continues with no entities rather than blocking
+   * indefinitely.
+   */
+  private async handleEntityQuery(event: {
+    requestId: string;
+    typeName: string;
+    kind: string;
+    payload: Record<string, unknown>;
+  }): Promise<void> {
+    const resolver = this.entityResolvers.get(event.typeName);
+    let entities: EntityRecord[] = [];
+    if (resolver) {
+      try {
+        switch (event.kind) {
+          case "matching": {
+            const search = (event.payload.search as string) ?? "";
+            entities = await resolver.matching(search);
+            break;
+          }
+          case "for": {
+            const ids = (event.payload.ids as string[]) ?? [];
+            entities = await resolver.resolve(ids);
+            break;
+          }
+          case "suggested": {
+            entities = resolver.suggested ? await resolver.suggested() : [];
+            break;
+          }
+        }
+      } catch (err) {
+        console.error(
+          `expo-assistant: entity resolver for "${event.typeName}" (kind=${event.kind}) threw`,
+          err
+        );
+        entities = [];
+      }
+    }
+    try {
+      await ExpoAssistantModule.respondToEntityQuery(
+        event.requestId,
+        entities as Array<Record<string, unknown>>
+      );
+    } catch {
+      // Late response — native side already timed out and dropped the
+      // continuation. Silently absorb so a slow resolver doesn't
+      // surface as a JS error.
+    }
   }
 }
 

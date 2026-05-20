@@ -25,10 +25,14 @@ export enum IntentCategory {
  * plugin throws at prebuild if a phrase references a primitive
  * parameter via `${paramName}`.
  *
- * `AppEnum`-typed parameters (`type: "enum:Name"` referencing a
- * declared `ios.enums[]` entry) ARE voice-slottable. Use them when you
- * want the user to be able to say the value as part of the phrase
- * (e.g. "Start cycling workout in MyApp" → `kind: "cycling"`).
+ * Both `AppEnum`-typed parameters (`type: "enum:Name"` referencing a
+ * declared `ios.enums[]` entry) AND `AppEntity`-typed parameters
+ * (`type: "entity:Name"` referencing a declared `ios.entities[]`
+ * entry) ARE voice-slottable. Use enum for closed-set choices
+ * ("cycling" / "running" / "swimming"); use entity for free-form text
+ * that resolves against your app's data (a Project name, a Contact, a
+ * Tag) — entity values are looked up at scan time through an async
+ * resolver you register from JS (see `VoiceAssistant.registerEntityResolver`).
  *
  * `IntentFile` is deferred to its own slice — file handle lifecycle
  * and binary payload bridging deserve dedicated treatment.
@@ -51,7 +55,8 @@ export interface AppShortcutParameter {
     | "duration"
     | "length"
     | "url"
-    | `enum:${string}`;
+    | `enum:${string}`
+    | `entity:${string}`;
   /** Display title used by `@Parameter(title:)`. Defaults to `name` capitalized. */
   title?: string;
   /** Prompt text iOS speaks/shows when the parameter is unbound at invocation time. Used as `requestValueDialog`. */
@@ -73,6 +78,65 @@ export interface AppEnumDeclaration {
   displayName?: string;
   /** Allowed case values. `id` is the raw Swift case + the value passed to JS; `display` is the human-readable label shown in pickers / spoken by Siri. */
   cases: { id: string; display: string }[];
+}
+
+/**
+ * One property on a declared AppEntity. Becomes a stored Swift property
+ * on the generated `<Name>Entity: AppEntity` struct AND a key the JS
+ * side pushes when resolving entities for queries.
+ */
+export interface AppEntityProperty {
+  /** Identifier — must be a valid Swift property name AND a JS dict key. */
+  name: string;
+  /** Type vocabulary mirrors the AppShortcut primitive set (no nesting). */
+  type: "string" | "number" | "boolean";
+}
+
+/**
+ * A queryable, Siri-aware piece of app data the plugin generates as a
+ * Swift `AppEntity`-conforming struct plus an `EntityStringQuery`
+ * sibling that bridges back into JS at scan time. Reference an entity
+ * type from an `AppShortcutParameter` via `type: "entity:<Name>"`.
+ *
+ * AppEntity is one of two types Apple's `AppShortcutPhrase` accepts as
+ * voice slots (the other is `AppEnum`), so phrases like
+ * `"Open ${project} in ${applicationName}"` become legal when
+ * `project` is entity-typed. Siri / Spotlight ask the generated
+ * `<Name>Query.entities(matching:)` for matches against the user's
+ * spoken text; that query proxies into your JS resolver via the
+ * `EntityResolver` bridge.
+ *
+ * `id` is implicit — every AppEntity has an `id: String` per Apple's
+ * protocol. JS must supply an `id` on every entity dict pushed back
+ * through a resolver.
+ *
+ * **Resolver lifecycle** (#28 ships approach A — async-with-timeout):
+ * the JS resolver is asked synchronously at scan time, with a 1s
+ * timeout. If the host app is backgrounded or terminated, JS is not
+ * alive and the query falls back to empty results. The snapshot-store
+ * follow-up (#41) restores backgrounded scan support.
+ */
+export interface AppEntityDeclaration {
+  /** Swift type name. Should be a valid Swift identifier (PascalCase by convention). The generated struct is named `<name>Entity`. */
+  name: string;
+  /** Display name used by `TypeDisplayRepresentation`. Defaults to `name`. */
+  displayName?: string;
+  /**
+   * Which declared property to use as the entity's
+   * `displayRepresentation` title (shown in Shortcuts pickers, Spotlight
+   * autocomplete, spoken back by Siri). Must reference a `string`-typed
+   * property declared in `properties`. Defaults to `"title"` if a
+   * property of that name exists, otherwise the first string property.
+   */
+  displayProperty?: string;
+  /**
+   * Properties on the entity beyond the implicit `id`. Each becomes a
+   * stored `@Property`-less Swift `let` on the generated struct AND a
+   * key in the dict JS pushes from its resolver. Must declare at least
+   * one string property so `displayRepresentation` has a sensible
+   * default.
+   */
+  properties: AppEntityProperty[];
 }
 
 export interface ExpoAssistantPluginConfig {
@@ -115,6 +179,15 @@ export interface ExpoAssistantPluginConfig {
      * `AppEnumDeclaration` for the shape.
      */
     enums?: AppEnumDeclaration[];
+    /**
+     * Queryable app-data types referenced by `appShortcuts[].parameters[].type`
+     * via the `entity:<Name>` syntax. Each generates a Swift
+     * `AppEntity`-conforming struct + an `EntityStringQuery` sibling
+     * that bridges into the JS resolver registered via
+     * `VoiceAssistant.registerEntityResolver(typeName, resolver)`. See
+     * `AppEntityDeclaration` for the shape.
+     */
+    entities?: AppEntityDeclaration[];
     appShortcuts?: {
       id: string;
       title: string;

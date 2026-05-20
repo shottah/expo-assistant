@@ -33,8 +33,14 @@ const expected = [
   "registerIntent",
   "requestMicrophonePermission",
   "requestSpeechRecognitionPermission",
+  // iOS AppEntity query callback; Android stubbed pending #17 / #18.
+  "respondToEntityQuery",
   "setDebugMode",
   "unregisterIntent",
+  // iOS-only refresh trigger for AppShortcuts entity slot re-query.
+  // Android stubbed; App Actions refresh on Android is handled by
+  // shortcuts.xml regeneration, not a runtime call.
+  "updateAppShortcutParameters",
 ].sort();
 
 describe("Cross-platform AsyncFunction contract", () => {
