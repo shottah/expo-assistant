@@ -1310,3 +1310,420 @@ describe("withExpoAssistant — iOS AppShortcuts codegen", () => {
     );
   });
 });
+
+describe("withExpoAssistant — AssistantSchemas codegen (#30)", () => {
+  let tmpRoot: string;
+
+  beforeEach(() => {
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "expo-assistant-test-"));
+    fs.mkdirSync(path.join(tmpRoot, "test-app"), { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  });
+
+  const readGenerated = () =>
+    fs.readFileSync(
+      path.join(tmpRoot, "test-app", "AppShortcutsBridge.generated.swift"),
+      "utf8"
+    );
+
+  describe("system.search schema (full first cut)", () => {
+    it("emits @AppIntent(schema: .system.search) macro and ShowInAppSearchResultsIntent conformance", async () => {
+      await applyPlugin(baseConfig(), {
+        ios: {
+          appShortcuts: [
+            {
+              id: "search-products",
+              title: "Search Products",
+              schema: "system.search",
+              phrases: ["Search ${applicationName}"],
+            },
+          ],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot);
+
+      const swift = readGenerated();
+      expect(swift).toContain("@AppIntent(schema: .system.search)");
+      expect(swift).toContain(
+        "public struct SearchProductsIntent: ShowInAppSearchResultsIntent"
+      );
+    });
+
+    it("wraps schema struct with @available(iOS 18.0, *)", async () => {
+      await applyPlugin(baseConfig(), {
+        ios: {
+          appShortcuts: [
+            {
+              id: "search-products",
+              title: "Search Products",
+              schema: "system.search",
+            },
+          ],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot);
+
+      const swift = readGenerated();
+      // The @available attribute must precede the macro + struct.
+      expect(swift).toMatch(
+        /@available\(iOS 18\.0, \*\)\s*\n@AppIntent\(schema: \.system\.search\)/
+      );
+    });
+
+    it("OMITS static var title and description on schema-bound structs (schema OWNS them)", async () => {
+      await applyPlugin(baseConfig(), {
+        ios: {
+          appShortcuts: [
+            {
+              id: "search-products",
+              title: "Search Products",
+              schema: "system.search",
+            },
+          ],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot);
+
+      const swift = readGenerated();
+      // The body of SearchProductsIntent should NOT contain `static var title`
+      // or `static var description`. Scope the check to the struct body.
+      const structMatch = swift.match(
+        /public struct SearchProductsIntent[^{]*\{([\s\S]*?)\n\}/
+      );
+      expect(structMatch).not.toBeNull();
+      const structBody = structMatch![1];
+      expect(structBody).not.toContain("static var title");
+      expect(structBody).not.toContain("static var description");
+    });
+
+    it("auto-injects the required `criteria: StringSearchCriteria` parameter from the catalog", async () => {
+      await applyPlugin(baseConfig(), {
+        ios: {
+          appShortcuts: [
+            {
+              id: "search-products",
+              title: "Search Products",
+              schema: "system.search",
+              // Developer doesn't declare criteria — the catalog supplies it.
+            },
+          ],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot);
+
+      const swift = readGenerated();
+      // Schema-required parameters are bare `var` declarations because
+      // the @AppIntent(schema:) macro applies @Parameter automatically.
+      expect(swift).toContain("public var criteria: StringSearchCriteria");
+      // And NOT wrapped with our @Parameter helper (which would conflict).
+      const structMatch = swift.match(
+        /public struct SearchProductsIntent[^{]*\{([\s\S]*?)\n\}/
+      );
+      expect(structMatch).not.toBeNull();
+      const structBody = structMatch![1];
+      expect(structBody).not.toMatch(/@Parameter[\s\S]*?criteria/);
+    });
+
+    it("emits the catalog's static declarations (searchScopes for system.search)", async () => {
+      await applyPlugin(baseConfig(), {
+        ios: {
+          appShortcuts: [
+            {
+              id: "search-products",
+              title: "Search Products",
+              schema: "system.search",
+            },
+          ],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot);
+
+      const swift = readGenerated();
+      expect(swift).toContain(
+        "public static var searchScopes: [StringSearchScope] = [.general]"
+      );
+    });
+
+    it("emits isAssistantOnly = true when assistantOnly is set", async () => {
+      await applyPlugin(baseConfig(), {
+        ios: {
+          appShortcuts: [
+            {
+              id: "search-products",
+              title: "Search Products",
+              schema: "system.search",
+              assistantOnly: true,
+            },
+          ],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot);
+
+      const swift = readGenerated();
+      expect(swift).toContain("public static let isAssistantOnly: Bool = true");
+    });
+
+    it("does NOT emit isAssistantOnly when not set", async () => {
+      await applyPlugin(baseConfig(), {
+        ios: {
+          appShortcuts: [
+            {
+              id: "search-products",
+              title: "Search Products",
+              schema: "system.search",
+            },
+          ],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot);
+
+      const swift = readGenerated();
+      expect(swift).not.toContain("isAssistantOnly");
+    });
+
+    it("marshals StringSearchCriteria via .term when bridging to JS", async () => {
+      await applyPlugin(baseConfig(), {
+        ios: {
+          appShortcuts: [
+            {
+              id: "search-products",
+              title: "Search Products",
+              schema: "system.search",
+            },
+          ],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot);
+
+      const swift = readGenerated();
+      // criteria.term unwraps the StringSearchCriteria → String for JS.
+      expect(swift).toContain('"criteria": criteria.term');
+    });
+
+    it("accepts extra developer-defined parameters beyond the schema's required set", async () => {
+      await applyPlugin(baseConfig(), {
+        ios: {
+          appShortcuts: [
+            {
+              id: "search-products",
+              title: "Search Products",
+              schema: "system.search",
+              parameters: [
+                { name: "limit", type: "number", title: "Limit" },
+              ],
+            },
+          ],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot);
+
+      const swift = readGenerated();
+      // Required param still emitted from catalog.
+      expect(swift).toContain("public var criteria: StringSearchCriteria");
+      // Extra param wrapped with our @Parameter helper.
+      expect(swift).toMatch(/@Parameter[\s\S]*?title: "Limit"[\s\S]*?public var limit: Double/);
+      // Both marshaled into the bridge payload.
+      expect(swift).toContain('"criteria": criteria.term');
+      expect(swift).toContain('"limit": limit');
+    });
+  });
+
+  describe("AppShortcutsProvider integration", () => {
+    it("wraps schema-bound AppShortcut entries inside #available(iOS 18.0, *)", async () => {
+      await applyPlugin(baseConfig(), {
+        ios: {
+          appShortcuts: [
+            {
+              id: "open-thing",
+              title: "Open Thing",
+              // No schema — should stay outside the iOS 18 guard.
+            },
+            {
+              id: "search-products",
+              title: "Search Products",
+              schema: "system.search",
+            },
+          ],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot);
+
+      const swift = readGenerated();
+      // Mixed pattern: var shortcuts = [...]; if #available { append }
+      expect(swift).toContain("var shortcuts: [AppShortcut] =");
+      expect(swift).toContain("if #available(iOS 18.0, *) {");
+      // Non-schema entry in the base array.
+      expect(swift).toMatch(
+        /var shortcuts: \[AppShortcut\] = \[[\s\S]*?intentId: "open-thing"/
+      );
+      // Schema entry inside the conditional append block.
+      expect(swift).toMatch(
+        /if #available\(iOS 18\.0, \*\)[\s\S]*?SearchProductsIntent\(\)/
+      );
+    });
+
+    it("uses the conditional pattern even when only schema-bound shortcuts are declared", async () => {
+      await applyPlugin(baseConfig(), {
+        ios: {
+          appShortcuts: [
+            {
+              id: "search-products",
+              title: "Search Products",
+              schema: "system.search",
+            },
+          ],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot);
+
+      const swift = readGenerated();
+      expect(swift).toContain("var shortcuts: [AppShortcut] = []");
+      expect(swift).toContain("if #available(iOS 18.0, *) {");
+      expect(swift).toContain("return shortcuts");
+    });
+
+    it("uses the plain return pattern when no schema-bound shortcuts are declared", async () => {
+      await applyPlugin(baseConfig(), {
+        ios: {
+          appShortcuts: [
+            {
+              id: "open-thing",
+              title: "Open Thing",
+            },
+          ],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot);
+
+      const swift = readGenerated();
+      // No conditional, no var pattern.
+      expect(swift).not.toContain("if #available(iOS 18.0, *)");
+      expect(swift).not.toContain("var shortcuts:");
+      expect(swift).toContain("return [");
+    });
+
+    it("includes AssistantSchemas docs in the Apple-ref header when schema intents are present", async () => {
+      await applyPlugin(baseConfig(), {
+        ios: {
+          appShortcuts: [
+            {
+              id: "search-products",
+              title: "Search Products",
+              schema: "system.search",
+            },
+          ],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot);
+
+      const swift = readGenerated();
+      expect(swift).toContain(
+        "AssistantSchemas     — https://developer.apple.com/documentation/appintents/assistantschemas"
+      );
+      expect(swift).toContain(
+        "@AppIntent(schema:)  — https://developer.apple.com/documentation/appintents/appintent(schema:)"
+      );
+    });
+  });
+
+  describe("validation", () => {
+    it("throws when a shortcut declares an unknown schema id", async () => {
+      await expect(
+        applyPlugin(baseConfig(), {
+          ios: {
+            appShortcuts: [
+              {
+                id: "bogus",
+                title: "Bogus",
+                schema: "system.bogus",
+              },
+            ],
+          },
+        }).runIosAppShortcutsCodegen(tmpRoot)
+      ).rejects.toThrow(/not in the AssistantSchemas catalog/);
+    });
+
+    it("error message for unknown schema lists known schema ids", async () => {
+      await expect(
+        applyPlugin(baseConfig(), {
+          ios: {
+            appShortcuts: [
+              {
+                id: "bogus",
+                title: "Bogus",
+                schema: "system.bogus",
+              },
+            ],
+          },
+        }).runIosAppShortcutsCodegen(tmpRoot)
+      ).rejects.toThrow(/system\.search/);
+    });
+
+    it("throws on duplicate schema across shortcuts (per-schema-id uniqueness — spike finding H)", async () => {
+      await expect(
+        applyPlugin(baseConfig(), {
+          ios: {
+            appShortcuts: [
+              {
+                id: "search-one",
+                title: "Search One",
+                schema: "system.search",
+              },
+              {
+                id: "search-two",
+                title: "Search Two",
+                schema: "system.search",
+              },
+            ],
+          },
+        }).runIosAppShortcutsCodegen(tmpRoot)
+      ).rejects.toThrow(
+        /Schema "system\.search" declared on multiple shortcuts/
+      );
+    });
+
+    it("throws when developer redeclares a schema-required parameter", async () => {
+      await expect(
+        applyPlugin(baseConfig(), {
+          ios: {
+            appShortcuts: [
+              {
+                id: "search-products",
+                title: "Search Products",
+                schema: "system.search",
+                parameters: [
+                  // criteria is auto-injected by system.search — declaring
+                  // it again here is a conflict.
+                  { name: "criteria", type: "string" },
+                ],
+              },
+            ],
+          },
+        }).runIosAppShortcutsCodegen(tmpRoot)
+      ).rejects.toThrow(/auto-injected by the schema/);
+    });
+
+    it("allows extra developer parameters that don't collide with schema-required ones", async () => {
+      // This should succeed — `limit` is not a schema-required name for
+      // system.search.
+      await applyPlugin(baseConfig(), {
+        ios: {
+          appShortcuts: [
+            {
+              id: "search-products",
+              title: "Search Products",
+              schema: "system.search",
+              parameters: [{ name: "limit", type: "number" }],
+            },
+          ],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot);
+      // No throw == pass.
+    });
+
+    it("does not interfere with non-schema shortcuts", async () => {
+      // Shortcuts without `schema` should continue to work exactly as
+      // they did pre-#30.
+      await applyPlugin(baseConfig(), {
+        ios: {
+          appShortcuts: [
+            { id: "open-thing", title: "Open Thing" },
+          ],
+        },
+      }).runIosAppShortcutsCodegen(tmpRoot);
+      const swift = readGenerated();
+      expect(swift).toContain('GenericVoiceIntent(intentId: "open-thing")');
+      expect(swift).not.toContain("@AppIntent(schema:");
+    });
+  });
+});
