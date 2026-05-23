@@ -89,6 +89,55 @@ export default function App() {
             .build()
         );
 
+        // Vanilla AppIntent — voice-triggerable via the declared phrase
+        // template. This is the path Siri actually uses for direct voice
+        // commands like "Hey Siri, search expo-assistant-example".
+        // The string `query` parameter cannot be a voice slot (DTS ruling
+        // #37), so iOS prompts via requestValueDialog after matching the
+        // bare phrase.
+        await va.registerIntent(
+          VoiceIntentBuilder.create<{ query: string }>()
+            .withId('search-voice')
+            .withCategory(IntentCategory.SEARCH)
+            .requiredParameter('query', { type: ParameterType.STRING })
+            .withHandler({
+              handle: async ({ query }) => {
+                console.log(
+                  `[expo-assistant-30] search-voice invoked (vanilla path), query="${query}"`
+                );
+                return { ok: true, query };
+              },
+            })
+            .build()
+        );
+
+        // Schema-bound intent for the #30 first cut. The plugin generates
+        // a @AppIntent(schema: .system.search) Swift struct; perform()
+        // routes here with the criteria string unwrapped from
+        // StringSearchCriteria.term by the codegen.
+        //
+        // Empirical finding (2026-05-22, iPhone 16 Pro + iOS 26.2 + AI on):
+        // schema intents do NOT route via Siri voice phrase matching.
+        // Library tap works; voice falls through to web search. Use the
+        // schema-bound intent for AI-surfaced contexts (Spotlight tiles,
+        // onscreen-content suggestions); use the vanilla `search-voice`
+        // intent above for Siri voice triggering.
+        await va.registerIntent(
+          VoiceIntentBuilder.create<{ criteria: string }>()
+            .withId('search-products')
+            .withCategory(IntentCategory.SEARCH)
+            .requiredParameter('criteria', { type: ParameterType.STRING })
+            .withHandler({
+              handle: async ({ criteria }) => {
+                console.log(
+                  `[expo-assistant-30] search-products invoked (schema-bound path), criteria="${criteria}"`
+                );
+                return { ok: true, query: criteria };
+              },
+            })
+            .build()
+        );
+
         setStatus({ state: 'registered' });
       } catch (e: unknown) {
         const message = e instanceof Error ? e.message : String(e);
@@ -196,6 +245,114 @@ export default function App() {
               onPress={donateSample}
               testID="donate-open-project"
             />
+          </View>
+        </View>
+
+        <View style={styles.card} testID="card-search-voice">
+          <View style={styles.cardHead}>
+            <Text style={styles.cardIcon}>🔎</Text>
+            <Text style={styles.cardTitle}>Search (voice)</Text>
+          </View>
+
+          <Text style={styles.cardSubtitle}>
+            Vanilla{' '}
+            <Text style={styles.code}>AppIntent</Text> with a primitive{' '}
+            <Text style={styles.code}>string</Text> parameter. The bare phrase{' '}
+            <Text style={styles.code}>"Search ${'$'}{'{'}'applicationName'{'}'}"</Text>{' '}
+            is voice-triggerable; Siri prompts for the query at invocation since
+            primitives can't be voice slots (#37).
+          </Text>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Voice test (this path WORKS):</Text>
+            <Text style={styles.phrase}>"Hey Siri, search expo-assistant-example"</Text>
+            <Text style={styles.helper}>
+              → Siri matches the phrase, prompts "What would you like to search
+              for?", fires <Text style={styles.code}>search-voice</Text> intent.
+              Watch Metro for{' '}
+              <Text style={styles.code}>
+                [expo-assistant-30] search-voice invoked
+              </Text>
+              .
+            </Text>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Why this works:</Text>
+            <Text style={styles.helper}>
+              Vanilla AppIntents with explicit{' '}
+              <Text style={styles.code}>phrases[]</Text> templates are Apple's
+              supported path for Siri voice triggering. Same path Apple's own
+              system apps (Timer, Notes) use under the hood — adapted for
+              third-party apps via{' '}
+              <Text style={styles.code}>AppShortcutsProvider</Text>.
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.card} testID="card-search-products-schema">
+          <View style={styles.cardHead}>
+            <Text style={styles.cardIcon}>✨</Text>
+            <Text style={styles.cardTitle}>
+              Search Products (schema-bound — AI surface)
+            </Text>
+          </View>
+
+          <Text style={styles.cardSubtitle}>
+            Schema-bound{' '}
+            <Text style={styles.code}>@AppIntent(schema: .system.search)</Text>{' '}
+            via the #30 plugin path. The schema auto-injects{' '}
+            <Text style={styles.code}>criteria: StringSearchCriteria</Text>;
+            the plugin unwraps it to a plain string for the JS handler.
+          </Text>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Library tap (this path WORKS):</Text>
+            <Text style={styles.phrase}>
+              Shortcuts.app → + → "expo-assistant-example" → tap "Search"
+            </Text>
+            <Text style={styles.helper}>
+              → fires <Text style={styles.code}>search-products</Text> intent.
+              Watch Metro for{' '}
+              <Text style={styles.code}>
+                [expo-assistant-30] search-products invoked (schema-bound path)
+              </Text>
+              . The tile displays under "Search" (schema's default title), not
+              "Search Products" — the macro owns title metadata.
+            </Text>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>
+              Voice DOESN'T work (verified 2026-05-22):
+            </Text>
+            <Text style={styles.phrase}>
+              "Hey Siri, search expo-assistant-example for tacos"
+            </Text>
+            <Text style={styles.helper}>
+              → Siri falls through to web search. Schema intents do NOT route
+              via voice phrase matching, even with Apple Intelligence enabled
+              on an iPhone 16 Pro. The{' '}
+              <Text style={styles.code}>phrases[]</Text> array on a schema
+              intent serves as a Shortcuts.app / Spotlight discovery hint, not
+              a voice trigger.
+            </Text>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>The compose pattern:</Text>
+            <Text style={styles.helper}>
+              For actions where you want BOTH voice triggering AND AI surfacing
+              (Spotlight tiles, onscreen-content suggestions, contextual app
+              gallery), declare TWO shortcuts — a vanilla one with explicit
+              phrases (see "Search (voice)" above), and a schema-bound one with{' '}
+              <Text style={styles.code}>assistantOnly: true</Text> to hide it
+              from the Library. Both can route to the same JS logic. See{' '}
+              <Text style={styles.code}>
+                runbook/integrate-assistant-schema.md
+              </Text>
+              .
+            </Text>
           </View>
         </View>
 

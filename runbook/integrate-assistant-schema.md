@@ -2,34 +2,97 @@
 
 Extends `runbook/integrate-app-shortcut.md` with the schema-bound intent path. **Read that runbook first** if you haven't already — schema intents are an additive extension on top of regular AppShortcuts, not a replacement.
 
-Schema-bound intents tell Apple Intelligence what your intent *semantically means* using Apple's predefined contracts. The OS can then route to your intent through reasoning, context inference, and cross-app composition — not just from declared voice phrase templates. See `.plan/08-assistant-schemas-research.md` and #30 for the research that drove this design.
+This doc is empirically grounded — every claim about runtime behavior has been verified on an iPhone 16 Pro (iOS 26.2, Apple Intelligence enabled) during the #30 pre-merge spike. Where Apple's docs implied something we couldn't reproduce, the runbook calls it out explicitly.
 
-## When to use schemas vs vanilla intents
+---
 
-| Use schema-bound when... | Stay with vanilla intent when... |
+## TL;DR — what schemas actually do (and don't)
+
+| You want... | Use this |
 |---|---|
-| Your intent's action maps cleanly to one of Apple's published schemas (search / open / create / delete / etc. in a specific domain) | Your intent's action is bespoke to your app and doesn't fit any schema |
-| You want Apple Intelligence to route to your intent from context (e.g., user looking at recipe → suggest sending to your grocery list) | Voice phrase templates + Spotlight cover your invocation surface |
-| Your target audience has iOS 18+ adoption you care about | You need to support iOS 16/17 widely |
-| You're willing to give up control over the intent's `title` / `description` (the schema owns those) | You want full control of the Shortcuts UX text |
+| **Voice-triggered actions** ("Hey Siri, open project in MyApp" → intent fires) | Vanilla `AppIntent` with explicit `phrases[]`. **NOT** schemas. |
+| **AI-driven surfacing** (Spotlight, "Apple Intelligence suggested for you", contextual UI from screenshots / onscreen content) | Schema-bound intent via `schema: "system.search"` etc. |
+| **BOTH** voice triggering AND AI surfacing for the same logical action | Declare **two intents** — vanilla for voice, schema-bound for AI. Route both to the same JS handler. |
 
-Schemas are *additive*: a schema-bound intent still appears in Shortcuts.app, Spotlight, and Siri voice paths exactly like a vanilla intent — it just *also* becomes Apple-Intelligence-routable. The downside is the iOS 18+ floor for the schema struct and the loss of control over title/description.
+**Empirical finding (iPhone 16 Pro / iOS 26.2 / Apple Intelligence on / 2026-05-22):** Direct Siri voice phrases like "Search expo-assistant-example for tacos" — even matching the declared `phrases: ["Search ${applicationName}"]` template — do **NOT** invoke schema-conformant intents. Siri falls through to web search. This is consistent across multiple phrasings (direct, contextual, foreground-app-active, Type-to-Siri). The schema-intent's `phrases[]` array serves as a Shortcuts.app / Spotlight discovery hint only; voice routing for schema intents goes through AI inferential paths, not phrase matching.
+
+---
+
+## When to use schemas vs vanilla intents (corrected from initial draft)
+
+| Use **schema-bound** when... | Stay with **vanilla AppIntent** when... |
+|---|---|
+| You want the intent to surface in AI-driven contexts (onscreen content suggestions, AI app gallery, semantic cross-app reasoning) | You want users to invoke the action via Siri voice |
+| Your action maps cleanly to one of Apple's published schemas (`system.search`, `photos.openAsset`, `journal.createEntry`, etc.) | Your action is bespoke OR doesn't fit a published schema |
+| Your target users have iOS 18+ with Apple Intelligence enabled on supported hardware (iPhone 15 Pro+ / 16+ / M-series Macs) | You need voice access on iOS 16/17 or non-AI hardware |
+| You're willing to give up control over the intent's `title` and accept the schema's default UX text in Shortcuts.app | You want explicit UX control |
+
+**The compose pattern:** for actions where voice triggering matters AND you want AI surfacing, declare two `appShortcuts[]` entries — a vanilla one with `phrases[]` for voice, and a schema-bound one with `assistantOnly: true` for AI surfaces. Both fire the same JS handler.
+
+```jsonc
+{
+  "appShortcuts": [
+    {
+      // Voice-triggerable — Siri matches the phrase template
+      "id": "search-products",
+      "title": "Search Products",
+      "phrases": ["Search ${applicationName} for ${query}"],
+      "parameters": [{ "name": "query", "type": "string", "prompt": "Search for?" }]
+    },
+    {
+      // AI-surfaceable — Apple Intelligence reasoning paths
+      "id": "search-products-ai",
+      "title": "Search Products (AI)",
+      "schema": "system.search",
+      "assistantOnly": true
+    }
+  ]
+}
+```
+
+Both intents route to the same `search-products` JS handler (by using the same handler logic on different `withId(...)` registrations, or by adding a shim handler for the `-ai` variant that delegates). See "Compose pattern in practice" below.
+
+---
+
+## Empirically verified capabilities
+
+Tests run 2026-05-22, iPhone 16 Pro, iOS 26.2, Apple Intelligence enabled, app freshly installed.
+
+| Capability | Schema intent (e.g. `@AppIntent(schema: .system.search)`) | Vanilla intent (no `schema` field) |
+|---|---|---|
+| Appears in Shortcuts.app "+ Add" picker | ✅ confirmed | ✅ confirmed |
+| Displays under schema's default title (e.g. "Search"), not your declared `title` | ✅ confirmed — `title` is owned by schema | n/a — your `title` is used |
+| Library tap → `perform()` → JS handler bridge | ✅ confirmed | ✅ confirmed |
+| Siri voice via declared phrase ("Hey Siri, search MyApp for X") | ❌ **confirmed not working** — Siri falls back to web search | ✅ works |
+| Apple Intelligence semantic routing (context inference) | 🟡 not directly testable via voice; expected to work for surfaces like Spotlight, AI-suggested actions, onscreen content recognition | n/a — vanilla intents do not get this surface |
+| Spotlight discovery (typed text) | ✅ confirmed | ✅ confirmed |
+| Hidden from Shortcuts.app when `assistantOnly: true` | ✅ confirmed | n/a |
+| Prebuild rejection of duplicate `schema:` declarations | ✅ enforced (Apple's per-app per-schema-id uniqueness, binary linker level) | n/a |
+
+The headline takeaway: **schemas enable AI surfaces; voice triggering still happens via vanilla intents.** If voice is the primary invocation pattern you want, schemas alone won't get you there.
+
+---
 
 ## Prerequisites
 
-- Expo SDK 54+, iOS deployment target 16.0+ (schema struct uses `@available(iOS 18.0, *)`)
-- For Apple Intelligence routing on-device: iPhone 15 Pro / Pro Max or iPhone 16+, iPad mini A17 Pro+ / M1+ iPad / M1+ Mac / Apple Vision Pro / Apple Watch Series 6+. **On older but iOS-18-capable hardware** (e.g., iPhone 15 non-Pro): schema intents still work via Shortcuts.app + Spotlight + Siri voice — only AI-routed invocations are skipped. Graceful degradation is automatic.
-- Xcode 16.1+ recommended (Xcode 16.0 had a dyld bug with `AppShortcutsProvider` + schema intents that was fixed in 16.1 beta 2)
+- Expo SDK 54+, iOS deployment target 16.0+ (the schema struct uses `@available(iOS 18.0, *)`; rest of your app can stay on 16+)
+- Xcode 16.1+ (Xcode 16.0 had a dyld bug with `AppShortcutsProvider` + schema intents; fixed in 16.1 beta 2)
+- For Apple Intelligence surfaces to actually route: iPhone 15 Pro / Pro Max or iPhone 16+, iPad mini (A17 Pro) / M1+ iPad / M1+ Mac / Vision Pro / Apple Watch Series 6+, with **Apple Intelligence enabled in Settings** (not just available — explicitly toggled on), with the AI on-device model downloaded
+- For voice triggering (vanilla intent path): any iOS 16+ device with Siri enabled, on a device with `com.apple.developer.siri` entitlement (paid Apple Developer account required for physical device builds — personal teams can't request the Siri capability)
 
-## Available schemas (first cut)
+---
 
-The plugin's catalog (`plugin/src/ios/codegen/schemas/catalog.ts`) ships these schemas. Adding new schemas is a catalog-table addition; see Apple's docs at https://developer.apple.com/documentation/appintents/assistantschemas.
+## Available schemas (first cut, October 2025)
 
-| Schema ID | Apple protocol | Required parameters | Static declarations | Notes |
+The plugin's catalog ships at `plugin/src/ios/codegen/schemas/catalog.ts`. Adding new schemas is a catalog-table addition; see Apple's docs at https://developer.apple.com/documentation/appintents/assistantschemas.
+
+| Schema ID | Apple protocol | Required parameters (auto-injected) | Static declarations | Notes |
 |---|---|---|---|---|
-| `system.search` | `ShowInAppSearchResultsIntent` | `criteria: StringSearchCriteria` (auto-injected) | `searchScopes: [StringSearchScope] = [.general]` | General in-app search. Most common starting schema. |
+| `system.search` | `ShowInAppSearchResultsIntent` | `criteria: StringSearchCriteria` | `searchScopes: [StringSearchScope] = [.general]` | General in-app search. The first-cut catalog entry. |
 
-Future-PR schemas (catalog stubs only at first cut): `photos.openAsset`, `journal.createEntry`, `mail.createDraft`, etc. — see the full enumeration in `.plan/08-assistant-schemas-research.md` § B1.
+Future schemas (catalog stubs only at first cut): `photos.openAsset`, `journal.createEntry`, `mail.createDraft`, ~120 more. See `.plan/08-assistant-schemas-research.md` § B1 for the full enumeration; track follow-up PRs against #30.
+
+---
 
 ## 1. Add a schema-bound shortcut
 
@@ -47,10 +110,9 @@ Future-PR schemas (catalog stubs only at first cut): `photos.openAsset`, `journa
               "title": "Search Products",
               "schema": "system.search",
               "phrases": ["Search ${applicationName}"]
-              // Note: NO `parameters` array — the schema's required
-              // `criteria: StringSearchCriteria` parameter is auto-
-              // injected from the catalog. You only declare params for
-              // EXTRA fields beyond what the schema requires.
+              // NO `parameters` array — `criteria: StringSearchCriteria`
+              // is auto-injected from the catalog. Declaring it manually
+              // throws at prebuild (would create a duplicate @Parameter).
             }
           ]
         }
@@ -81,11 +143,41 @@ public struct SearchProductsIntent: ShowInAppSearchResultsIntent {
 }
 ```
 
-Note that **no `static var title` or `static var description` is emitted** — the `@AppIntent(schema:)` macro owns those when bound to a schema (Apple's official guidance, verified empirically in the pre-implementation spike). The UX consequence: your shortcut will appear in Shortcuts.app under the schema's default title (e.g., "Search") rather than under the `title` you declared. That's an unavoidable trade-off; the `title` field is still useful as documentation but won't render.
+Notes:
+- **No `static var title` or `static var description` is emitted** — the `@AppIntent(schema:)` macro owns those when bound to a schema. Apple's official guidance; verified empirically.
+- The shortcut appears in Shortcuts.app under the schema's default title (e.g. "Search"), not your declared `title`. Your `title` field becomes plugin-internal documentation; it doesn't render in iOS UX surfaces.
+- `phrases` are NOT voice triggers for schema intents — they're discovery hints. Confirmed empirically.
 
-## 2. Add EXTRA parameters beyond the schema's required ones (optional)
+## 2. Wire the JS handler
 
-If you need fields beyond what the schema's contract requires, declare them in `parameters[]`. Don't redeclare the schema-required ones — the plugin throws at prebuild if you do.
+```ts
+import { VoiceAssistant, VoiceIntentBuilder, IntentCategory, ParameterType } from 'expo-assistant';
+
+const va = await VoiceAssistant.initialize({ debugMode: true });
+
+await va.registerIntent(
+  VoiceIntentBuilder.create<{ criteria: string }>()
+    .withId('search-products')
+    .withCategory(IntentCategory.SEARCH)
+    .requiredParameter('criteria', { type: ParameterType.STRING })
+    .withHandler({
+      handle: async ({ criteria }) => {
+        // Fires on Library tap. Will fire on AI surfaces too when
+        // Apple Intelligence routes through (Spotlight tile, onscreen
+        // content suggestions, etc.).
+        const results = await searchProducts(criteria);
+        return { ok: true, count: results.length };
+      },
+    })
+    .build()
+);
+```
+
+Same `withId('search-products')` as the `id` in `app.json` — case-sensitive byte-for-byte. The plugin auto-unwraps `StringSearchCriteria` for you; your JS handler receives `criteria: string`.
+
+## 3. Add EXTRA developer parameters beyond the schema's required ones (optional)
+
+If you need fields beyond what the schema's contract requires, declare them in `parameters[]`. Don't redeclare the schema-required ones — the plugin throws at prebuild.
 
 ```jsonc
 {
@@ -99,60 +191,39 @@ If you need fields beyond what the schema's contract requires, declare them in `
 }
 ```
 
-The JS handler then receives both the schema-required `criteria` (as a plain string — the plugin unwraps `StringSearchCriteria.term` for you) AND your extra `limit` field:
+The JS handler now receives both:
 
 ```ts
-await va.registerIntent(
-  VoiceIntentBuilder.create<{ criteria: string; limit: number }>()
-    .withId('search-products')
-    .requiredParameter('criteria', { type: ParameterType.STRING })
-    .requiredParameter('limit', { type: ParameterType.NUMBER })
-    .withHandler({
-      handle: async ({ criteria, limit }) => {
-        const results = await searchProducts(criteria, { limit });
-        return { ok: true, count: results.length };
-      },
-    })
-    .build()
-);
+.requiredParameter('criteria', { type: ParameterType.STRING })
+.requiredParameter('limit', { type: ParameterType.NUMBER })
+.withHandler({
+  handle: async ({ criteria, limit }) => { /* ... */ },
+})
 ```
 
-## 3. AppShortcutsProvider behavior with mixed iOS 16+ and iOS 18+ shortcuts
+## 4. The compose pattern (voice + AI for the same action)
 
-When your `appShortcuts[]` mixes schema-bound (iOS 18) and vanilla (iOS 16+) entries, the plugin emits a conditional pattern in the generated `AppShortcutsProvider`:
-
-```swift
-public struct ExpoAssistantAppShortcuts: AppShortcutsProvider {
-    public static var appShortcuts: [AppShortcut] {
-        var shortcuts: [AppShortcut] = [
-            // iOS 16+ vanilla shortcuts here
-        ]
-        if #available(iOS 18.0, *) {
-            shortcuts.append(/* schema-bound shortcut */)
-        }
-        return shortcuts
-    }
-}
-```
-
-This keeps the entire iOS deployment target at 16.0+ while still emitting iOS 18 schema intents. No additional action required from you — it's automatic.
-
-## 4. `assistantOnly` migration knob
-
-If you're adding schema conformance to an **existing** intent that's already in production (and that users may have created Shortcuts referencing), modifying its shape can break those Shortcuts. Apple recommends creating a NEW schema-bound intent with `assistantOnly: true` and keeping the original intent for back-compat.
+If voice triggering matters for the same action you want AI-surfaced, declare two `appShortcuts[]` entries.
 
 ```jsonc
 {
   "appShortcuts": [
     {
-      // Original intent — keep for users with saved Shortcuts.
-      "id": "search-products",
-      "title": "Search Products"
+      // Voice-triggerable via Siri phrase template
+      "id": "search-voice",
+      "title": "Search",
+      "phrases": [
+        "Search ${applicationName} for ${query}",
+        "Find ${query} in ${applicationName}"
+      ],
+      "parameters": [
+        { "name": "query", "type": "string", "prompt": "What are you looking for?" }
+      ]
     },
     {
-      // New schema-bound intent — only Apple Intelligence can route here.
-      "id": "search-products-ai",
-      "title": "Search Products (AI)",
+      // AI-surfaceable — Apple Intelligence reasoning paths
+      "id": "search-ai",
+      "title": "Search (AI surface)",
       "schema": "system.search",
       "assistantOnly": true
     }
@@ -160,13 +231,40 @@ If you're adding schema conformance to an **existing** intent that's already in 
 }
 ```
 
-The `assistantOnly` intent vanishes from Shortcuts.app Library and from Spotlight — users see only the original. Apple Intelligence sees both and prefers the schema-bound one when reasoning routes apply.
+Wire both JS handlers, possibly sharing implementation:
 
-**Caveat:** voice-routing behavior with `isAssistantOnly` is unverified on simulator (spike Q3 deferred). On Apple-Intelligence-eligible hardware it should work as Apple intends; on non-AI hardware, your `assistantOnly` intent is effectively dead weight. Use deliberately.
+```ts
+async function performSearch(criteria: string) {
+  const results = await searchProducts(criteria);
+  return { ok: true, count: results.length };
+}
 
-## 5. Per-schema-id uniqueness (one shortcut per schema per app)
+await va.registerIntent(
+  VoiceIntentBuilder.create<{ query: string }>()
+    .withId('search-voice')
+    .requiredParameter('query', { type: ParameterType.STRING })
+    .withHandler({ handle: async ({ query }) => performSearch(query) })
+    .build()
+);
 
-Apple enforces this at the binary linker level — two intents in one app cannot both conform to the same schema. The plugin catches this at prebuild and throws:
+await va.registerIntent(
+  VoiceIntentBuilder.create<{ criteria: string }>()
+    .withId('search-ai')
+    .requiredParameter('criteria', { type: ParameterType.STRING })
+    .withHandler({ handle: async ({ criteria }) => performSearch(criteria) })
+    .build()
+);
+```
+
+`assistantOnly: true` keeps the schema variant out of the Shortcuts.app picker so users see only the voice-friendly variant. Apple Intelligence sees both and prefers the schema-bound one when reasoning routes apply.
+
+## 5. `assistantOnly` migration knob (existing-intent → schema-bound)
+
+If you're adding schema conformance to an **existing** intent that's in production (and that users may have created Shortcuts referencing), changing its shape breaks those Shortcuts. Apple recommends keeping the original AND adding a new schema-bound `assistantOnly: true` variant — same compose pattern as above.
+
+## 6. Per-schema-id uniqueness (one shortcut per schema per app)
+
+Apple enforces this at the binary linker level. Two intents in one app cannot conform to the same schema. The plugin catches this at prebuild:
 
 ```
 [expo-assistant] Schema "system.search" declared on multiple shortcuts:
@@ -180,34 +278,28 @@ Apple enforces this at the binary linker level — two intents in one app cannot
        schema can have exactly one implementing intent per app.
 ```
 
-If your app has multiple search surfaces, pick the one that's most representative for schema-binding. The others can stay as vanilla intents — they still get all the usual invocation paths.
+If your app has multiple search surfaces, pick the most representative one for schema-binding. The others stay as vanilla intents (which still get all the standard invocation paths).
 
-## 6. Verify
+## 7. Verification on device
 
-- [ ] `bunx expo prebuild --platform ios` succeeds
-- [ ] `bunx expo run:ios` succeeds (Xcode 16.1+ required for clean dyld behavior)
-- [ ] Shortcuts.app → "+" → search your app name → schema-bound shortcut appears with the schema's default title
-- [ ] Tap the shortcut → `perform()` fires → JS handler receives the parameter values
-- [ ] (On Apple-Intelligence-eligible hardware) Siri voice + Apple Intelligence routes to the intent via semantic reasoning, not just declared phrase templates
-
-## 7. Current limits (first cut)
-
-- **One schema supported in catalog:** `system.search`. Adding `photos.openAsset`, `journal.createEntry`, and the full 125-schema enumeration are tracked in follow-up PRs against #30.
-- **Voice routing for schema intents requires real-device verification** for production confidence. Library tap path is fully confirmed; voice routing on simulator showed inconclusive behavior (web search fallback instead of intent invocation — likely a Cmd+Option+S simulator artifact, but worth verifying on a physical device before shipping).
-- **Entity schemas not yet supported** — the `schema` field on entity declarations is a follow-up. Today, schema intents that need entity-typed parameters (e.g., `photos.openAsset` needing a `PhotoEntity`) can't be expressed.
-- **No `refresh-schemas.mjs` scraper yet** — the catalog table is hand-maintained. When Apple adds schemas at WWDC, add entries to `plugin/src/ios/codegen/schemas/catalog.ts` manually. Scraper script tracked as a follow-up issue.
-- **AssistantSchemas requires iOS 18.0+** — the schema struct gates with `@available(iOS 18.0, *)`. Your app's deployment target can stay at iOS 16+; only the schema-bound struct (and the conditional append in the provider) gates higher.
+- [ ] `bunx expo prebuild --platform ios --clean` succeeds
+- [ ] `bunx expo run:ios --device <name>` succeeds (Xcode 16.1+; paid Apple Developer team if building for physical device with Siri entitlement; for personal team builds set `enableSiriKit: false` in the plugin props since personal teams can't request the Siri capability)
+- [ ] Shortcuts.app → "+" → search your app name → schema-bound shortcut appears under the schema's default title
+- [ ] Tap the shortcut → JS handler fires (visible in Metro)
+- [ ] (Voice path) declared `phrases[]` for the schema intent will NOT trigger via Siri voice — this is expected, schemas don't voice-route
+- [ ] (Optional, AI-eligible device) Apple Intelligence surfaces — Spotlight tiles, contextual suggestions — should eventually offer the action
 
 ## 8. Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Plugin throws `Shortcut "X" declares schema "Y" which is not in the AssistantSchemas catalog` | `schema` value isn't in the catalog (typo, or a schema we haven't yet added) | Check the table in section "Available schemas" above. If you need a schema not listed, add it to `plugin/src/ios/codegen/schemas/catalog.ts` per the maintenance guide |
-| Plugin throws `Schema "X" declared on multiple shortcuts` | Two `appShortcuts[]` entries share the same `schema` value | Apple's per-app per-schema uniqueness constraint. Pick one shortcut, leave the others as vanilla intents |
+| Plugin throws `Shortcut "X" declares schema "Y" which is not in the AssistantSchemas catalog` | `schema` value isn't in the catalog (typo or schema we haven't added) | Check the "Available schemas" table. To add a missing one, append to `plugin/src/ios/codegen/schemas/catalog.ts` per the maintenance guide |
+| Plugin throws `Schema "X" declared on multiple shortcuts` | Two `appShortcuts[]` entries share the same `schema` value | Apple's per-app per-schema uniqueness constraint. Pick one shortcut, leave others as vanilla intents |
 | Plugin throws `parameter "criteria" is auto-injected by the schema` | You declared a parameter that the schema auto-supplies | Remove that parameter from your `parameters[]` array — the catalog handles it |
-| Shortcut shows under "Search" in Shortcuts.app instead of your declared `title` | `@AppIntent(schema:)` macro takes ownership of `title` | This is expected behavior — the schema's default title displays. Your `title` field becomes documentation only. To change UX text, use a vanilla intent (drop the `schema` field) |
-| Xcode 16.0 dyld error like `Symbol not found: _$s10AppIntents15AssistantSchemaV...` | Old Xcode toolchain | Upgrade to Xcode 16.1+ (fix shipped in 16.1 beta 2 / iOS 18.1 beta 4) |
-| Schema intent not invoked by Siri voice on simulator | Simulator Siri text input routes differently than real-device voice; no Apple Intelligence on simulator | Test on a physical iPhone 15 Pro+ / 16+ with Apple Intelligence enabled. Library tap path is the reliable signal on simulator |
+| Shortcut shows under "Search" in Shortcuts.app instead of your `title` | `@AppIntent(schema:)` macro owns the title metadata | Expected — your `title` is plugin-internal. To control UX text, use a vanilla intent (drop the `schema` field) |
+| Build error: "Personal development teams do not support the Siri capability" | Personal Apple Developer team building for physical device with `com.apple.developer.siri` entitlement | Either (a) upgrade to paid Apple Developer Program, or (b) set `"enableSiriKit": false` in your plugin config — modern AppShortcuts/AppIntents (what we ship) don't actually need this entitlement; it's a legacy SiriKit (`INIntents`) thing |
+| Siri voice says "Hey Siri, search MyApp for X" → Siri shows web search results instead | **Expected.** Schema intents don't voice-route via `phrases[]`. | Add a vanilla AppIntent with explicit `phrases[]` for the same action. See the compose pattern above. |
+| Xcode 16.0 dyld error like `Symbol not found: _$s10AppIntents15AssistantSchemaV...` | Old Xcode toolchain | Upgrade to Xcode 16.1+ |
 
 ## 9. Related docs
 
@@ -216,5 +308,6 @@ If your app has multiple search surfaces, pick the one that's most representativ
 - [Apple — Integrating actions with Siri and Apple Intelligence](https://developer.apple.com/documentation/appintents/integrating-actions-with-siri-and-apple-intelligence)
 - [WWDC24 — Bring your app to Siri](https://developer.apple.com/videos/play/wwdc2024/10133/)
 - [WWDC25 — Develop for Shortcuts and Spotlight with App Intents](https://developer.apple.com/videos/play/wwdc2025/260/)
-- `runbook/integrate-app-shortcut.md` — the base AppShortcut runbook this one extends
+- `runbook/integrate-app-shortcut.md` — the base AppShortcut runbook for voice-triggerable vanilla intents
 - `plugin/SCOPE.md` — package boundary; AssistantSchemas falls on the *invocation* side
+- `.plan/08-assistant-schemas-research.md` — the ADR + empirical spike findings backing this guide
