@@ -3,6 +3,23 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0](https://github.com/shottah/expo-assistant/compare/v0.2.0...v0.3.0) (2026-05-23)
+
+
+### Features
+
+* **ios:** AssistantSchemas conformance — first cut, system.search ([#50](https://github.com/shottah/expo-assistant/issues/50)) ([f1be192](https://github.com/shottah/expo-assistant/commit/f1be192ba2d60f8458842e7269df822b2f26e69b)), closes [#30](https://github.com/shottah/expo-assistant/issues/30)
+
+
+### Documentation
+
+* **plugin:** add SCOPE.md + compose-with-expo-widgets runbook ([#49](https://github.com/shottah/expo-assistant/issues/49)) ([d7b6266](https://github.com/shottah/expo-assistant/commit/d7b6266c98e1e297f26f7239af5fec9acad31d9f))
+
+
+### Refactor
+
+* **plugin:** split iOS plugin into per-concern modules + codegen/ ([#46](https://github.com/shottah/expo-assistant/issues/46)) ([cd45810](https://github.com/shottah/expo-assistant/commit/cd45810eb61e3e8342b639377c2f5611160be551))
+
 ## [0.2.0](https://github.com/shottah/expo-assistant/compare/v0.1.0...v0.2.0) (2026-05-20)
 
 
