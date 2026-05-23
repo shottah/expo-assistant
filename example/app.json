@@ -33,6 +33,7 @@
         "expo-assistant",
         {
           "intents": ["productivity"],
+          "enableSiriKit": false,
           "ios": {
             "siriUsageDescription": "Open projects via voice",
             "entities": [
@@ -64,6 +65,29 @@
                     "prompt": "Which project?"
                   }
                 ]
+              },
+              {
+                "id": "search-voice",
+                "title": "Search",
+                "systemImageName": "magnifyingglass",
+                "phrases": [
+                  "Search ${applicationName}",
+                  "Find something in ${applicationName}"
+                ],
+                "parameters": [
+                  {
+                    "name": "query",
+                    "type": "string",
+                    "title": "Query",
+                    "prompt": "What would you like to search for?"
+                  }
+                ]
+              },
+              {
+                "id": "search-products",
+                "title": "Search Products (AI surface)",
+                "systemImageName": "sparkles",
+                "schema": "system.search"
               }
             ]
           }

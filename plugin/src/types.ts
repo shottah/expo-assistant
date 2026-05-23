@@ -213,8 +213,52 @@ export interface ExpoAssistantPluginConfig {
        * `requestValueDialog` prompt or via the Shortcuts editor. The
        * plugin throws at prebuild if a phrase template references a
        * primitive parameter via `${paramName}`.
+       *
+       * When `schema` is set, the schema's required parameters are
+       * AUTO-INJECTED from the catalog — declaring them here will throw
+       * at prebuild. Only declare extras beyond what the schema requires.
        */
       parameters?: AppShortcutParameter[];
+      /**
+       * Optional AssistantSchemas conformance. When set, the plugin
+       * emits `@AppIntent(schema: .<schema>)` on the generated struct,
+       * automatically wires the schema's required parameters from the
+       * catalog, and gates the struct with `@available(iOS 18.0, *)`.
+       * Apple's training models can then route to this intent based on
+       * semantic intent inference (not just declared phrase templates).
+       *
+       * Schema-bound intents are additive: they still appear in
+       * Shortcuts.app Library, Spotlight, and Siri voice paths —
+       * `assistantOnly: true` is the opt-out for AI-only visibility.
+       *
+       * Known schema IDs (catalog at
+       * `plugin/src/ios/codegen/schemas/catalog.ts`): "system.search".
+       * Adding new schemas is a catalog-table addition; see Apple's docs
+       * at https://developer.apple.com/documentation/appintents/assistantschemas.
+       *
+       * **iOS 17.4 minimum deployment target** is required if this
+       * shortcut is also referenced from `AppShortcutsProvider` (i.e.
+       * any `appShortcuts[]` entry with a `schema`) due to a documented
+       * Xcode 16.0 dyld bug (fixed in 16.1) and the AppShortcutsBuilder
+       * conditional-availability floor. Lower targets warn; do not
+       * error.
+       */
+      schema?: string;
+      /**
+       * When `true`, emits `static let isAssistantOnly: Bool = true`
+       * on the generated struct. The intent vanishes from the
+       * Shortcuts.app Library and from Spotlight — it's only available
+       * via Apple Intelligence routing. Use during schema-migration
+       * scenarios when adding schema conformance to an existing intent
+       * would otherwise break users' saved Shortcuts.
+       *
+       * Only meaningful when `schema` is also set; ignored otherwise.
+       *
+       * Voice-routing behavior with this flag is unverified on
+       * simulator (spike question Q3 deferred to real-device follow-up).
+       * Don't rely on Siri voice fallback for assistantOnly intents.
+       */
+      assistantOnly?: boolean;
     }[];
   };
 

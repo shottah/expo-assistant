@@ -42,6 +42,7 @@ import path from "path";
 import { ExpoAssistantPluginConfig } from "../types";
 import { pluginError } from "../utils/errors";
 import { renderAppShortcutsProviderFile } from "./codegen/AppShortcutsProviderSwift";
+import { validateSchemaDeclarations } from "./codegen/schemas/validate";
 
 const GENERATED_FILENAME = "AppShortcutsBridge.generated.swift";
 
@@ -54,6 +55,7 @@ export const withIOSAppShortcutsCodegen: ConfigPlugin<
     const entities = props.ios?.entities ?? [];
 
     validateCrossReferences(shortcuts, enums, entities);
+    validateSchemaDeclarations(shortcuts);
 
     const projectName =
       cfg.modRequest.projectName ?? cfg.name ?? "ExpoAssistantApp";

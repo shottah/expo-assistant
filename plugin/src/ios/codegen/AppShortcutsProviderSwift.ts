@@ -21,6 +21,8 @@ import type {
 import { generateAppEntityStructs } from "./AppEntitySwift";
 import { generateAppEnumStruct } from "./AppEnumSwift";
 import { buildPhraseLiteral } from "./PhraseLiteral";
+import { getSchemaSpec } from "./schemas/catalog";
+import { generateSchemaIntentStruct } from "./schemas/SchemaIntentSwift";
 import { generateTypedIntentStruct } from "./TypedIntentSwift";
 import { escapeSwift, intentStructName } from "./types";
 
@@ -30,6 +32,10 @@ export interface AppShortcutDeclaration {
   phrases?: string[];
   systemImageName?: string;
   parameters?: AppShortcutParameter[];
+  /** Optional AssistantSchemas conformance — see types.ts. */
+  schema?: string;
+  /** Emit `static let isAssistantOnly: Bool = true` when schema is set. */
+  assistantOnly?: boolean;
 }
 
 export interface RenderInput {
@@ -66,8 +72,14 @@ export function renderAppShortcutsProviderFile(input: RenderInput): string {
   let hasMeasurement = false;
   let hasURL = false;
 
+  // Track whether any shortcut requires a schema-conformant intent so
+  // we can gate the AppShortcuts entry list at iOS 18 when needed.
+  let hasSchemaIntents = false;
+  const schemaAppShortcutEntries: string[] = [];
+
   for (const s of shortcuts) {
     const params = s.parameters ?? [];
+    const hasSchema = Boolean(s.schema);
     const hasTypedParams = params.length > 0;
 
     if (params.some((p) => p.type === "date")) needsISO8601 = true;
@@ -81,30 +93,88 @@ export function renderAppShortcutsProviderFile(input: RenderInput): string {
       buildPhraseLiteral(p, s.id, params)
     );
 
-    const intentExpr = hasTypedParams
-      ? `${intentStructName(s.id)}()`
-      : `GenericVoiceIntent(intentId: "${escapeSwift(s.id)}")`;
-
-    appShortcutEntries.push(
-      `            AppShortcut(\n` +
-        `                intent: ${intentExpr},\n` +
-        `                phrases: [${phraseLiterals.join(", ")}],\n` +
-        `                shortTitle: "${escapeSwift(s.title)}",\n` +
-        `                systemImageName: "${escapeSwift(s.systemImageName ?? "mic")}"\n` +
-        `            )`
-    );
-
-    if (hasTypedParams) {
+    // Three routing branches:
+    //   1. schema-bound  → SchemaIntentSwift
+    //   2. typed params  → TypedIntentSwift (existing)
+    //   3. neither       → GenericVoiceIntent fallback
+    let intentExpr: string;
+    if (hasSchema) {
+      const spec = getSchemaSpec(s.schema!);
+      if (!spec) {
+        // Defensive: validateSchemaDeclarations should have caught
+        // this. If we hit it here, it's a logic bug.
+        throw new Error(
+          `[expo-assistant] BUG: hit AppShortcutsProviderSwift with unknown schema "${s.schema}" — validateSchemaDeclarations should have caught this upstream.`
+        );
+      }
+      hasSchemaIntents = true;
+      intentExpr = `${intentStructName(s.id)}()`;
+      typedIntentStructs.push(
+        generateSchemaIntentStruct(
+          intentStructName(s.id),
+          s.id,
+          spec,
+          params,
+          s.assistantOnly ?? false
+        )
+      );
+    } else if (hasTypedParams) {
+      intentExpr = `${intentStructName(s.id)}()`;
       typedIntentStructs.push(
         generateTypedIntentStruct(intentStructName(s.id), s.id, s.title, params)
       );
+    } else {
+      intentExpr = `GenericVoiceIntent(intentId: "${escapeSwift(s.id)}")`;
+    }
+
+    const entryText =
+      `            AppShortcut(\n` +
+      `                intent: ${intentExpr},\n` +
+      `                phrases: [${phraseLiterals.join(", ")}],\n` +
+      `                shortTitle: "${escapeSwift(s.title)}",\n` +
+      `                systemImageName: "${escapeSwift(s.systemImageName ?? "mic")}"\n` +
+      `            )`;
+
+    if (hasSchema) {
+      // Schema entries get added inside a #available(iOS 18, *) guard
+      // in the provider so the iOS 17 baseline still compiles.
+      schemaAppShortcutEntries.push(entryText);
+    } else {
+      appShortcutEntries.push(entryText);
     }
   }
 
-  const arrayBody =
-    appShortcutEntries.length === 0
-      ? "        return [AppShortcut]()"
-      : `        return [\n${appShortcutEntries.join(",\n")}\n        ]`;
+  // Build the appShortcuts array body. Three shapes:
+  //   1. No shortcuts at all (empty array)
+  //   2. Only iOS 16+ shortcuts (direct return — existing behavior)
+  //   3. Mix of 16+ and iOS 18 schema shortcuts (var + conditional append)
+  //
+  // We use the `var shortcuts; if #available { append }; return` pattern
+  // for case 3 rather than @AppShortcutsBuilder's limitedAvailability
+  // helper, because the builder's @available floor is iOS 17.4 (not 16+).
+  // The bare array + conditional append works on the same iOS 16+ floor
+  // as the existing pipeline.
+  let arrayBody: string;
+  if (appShortcutEntries.length === 0 && schemaAppShortcutEntries.length === 0) {
+    arrayBody = "        return [AppShortcut]()";
+  } else if (schemaAppShortcutEntries.length === 0) {
+    arrayBody = `        return [\n${appShortcutEntries.join(",\n")}\n        ]`;
+  } else {
+    // Mixed case. Initialize with iOS 16+ entries (may be empty), then
+    // conditionally append the iOS 18 schema entries.
+    const baseArrayInit =
+      appShortcutEntries.length === 0
+        ? "        var shortcuts: [AppShortcut] = []"
+        : `        var shortcuts: [AppShortcut] = [\n${appShortcutEntries.join(",\n")}\n        ]`;
+    const appendBlock = schemaAppShortcutEntries
+      .map((entry) => `            shortcuts.append(\n${indentBy(entry, 4)}\n            )`)
+      .join("\n");
+    arrayBody = `${baseArrayInit}
+        if #available(iOS 18.0, *) {
+${appendBlock}
+        }
+        return shortcuts`;
+  }
 
   const enumBlock = enumStructs.length
     ? `\n${enumStructs.join("\n\n")}\n`
@@ -135,6 +205,7 @@ export function renderAppShortcutsProviderFile(input: RenderInput): string {
     hasMeasurement,
     hasURL,
     hasTypedIntents: typedIntentStructs.length > 0,
+    hasSchemaIntents,
   });
 
   return `// AUTO-GENERATED by expo-assistant. Do not edit by hand.
@@ -186,6 +257,7 @@ export function buildAppleRefBlock(flags: {
   hasMeasurement: boolean;
   hasURL: boolean;
   hasTypedIntents: boolean;
+  hasSchemaIntents?: boolean;
 }): string {
   const lines: string[] = [
     "//   AppShortcutsProvider — https://developer.apple.com/documentation/appintents/appshortcutsprovider",
@@ -198,6 +270,12 @@ export function buildAppleRefBlock(flags: {
       "//   @Parameter           — https://developer.apple.com/documentation/appintents/parameter",
       "//   ParameterSummary     — https://developer.apple.com/documentation/appintents/parametersummary",
       "//   IntentResult         — https://developer.apple.com/documentation/appintents/intentresult"
+    );
+  }
+  if (flags.hasSchemaIntents) {
+    lines.push(
+      "//   AssistantSchemas     — https://developer.apple.com/documentation/appintents/assistantschemas",
+      "//   @AppIntent(schema:)  — https://developer.apple.com/documentation/appintents/appintent(schema:)"
     );
   }
   if (flags.hasEnums || flags.hasEntities) {
@@ -236,4 +314,17 @@ export function buildAppleRefBlock(flags: {
     );
   }
   return lines.join("\n");
+}
+
+/**
+ * Re-indent every line of a block by `extra` spaces. Used by the
+ * mixed-availability array body builder to nest the schema entries
+ * inside the if-available block at the right depth.
+ */
+function indentBy(text: string, extra: number): string {
+  const pad = " ".repeat(extra);
+  return text
+    .split("\n")
+    .map((line) => `${pad}${line}`)
+    .join("\n");
 }
