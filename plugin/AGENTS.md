@@ -4,6 +4,8 @@ Guidance for agents and human contributors extending the config plugin. **Read t
 
 This doc lives at `plugin/AGENTS.md`. The repo-root `AGENTS.md` covers the broader package architecture (the three-flow register/donate/invoke matrix, push-only invocation model, cross-platform contract); this doc covers everything specific to how the config plugin is constructed and how to evolve it.
 
+**Before adding any new feature, read `plugin/SCOPE.md` first** — it fixes the boundary between expo-assistant and adjacent packages (`expo-widgets`, `expo-av`, `expo-notifications`, etc.). If a proposed feature falls on the wrong side of the boundary, the answer is "this belongs in another package" rather than "let's grow our plugin." Scope-boundary decisions affect codegen architecture before they affect any individual feature.
+
 The shape of the plugin was established by the audit at `.plan/07-plugin-audit.md` (gitignored, local-only) and codified by the refactor in PR #46. Follow the patterns below — they're not arbitrary, they line up with the conventions in eight first-party Expo plugins we reviewed.
 
 ---
@@ -191,8 +193,10 @@ The audit at `.plan/07-plugin-audit.md` covers all ten conventions in detail wit
 
 ## 6. Cross-references
 
+- **`plugin/SCOPE.md`** — package boundary definition. What expo-assistant MUST do, MUST NOT do, and how it composes with adjacent packages (`expo-widgets`, `expo-av`, `expo-notifications`). Read before filing any feature issue. Updated whenever a new first-party package overlaps with our scope or when a new compose pattern emerges.
 - **Repo-root `AGENTS.md`** — package-level architecture (register/donate/invoke matrix, push-only invocation model, cross-platform contract, native module conventions).
-- **`runbook/integrate-app-shortcut.md`** — developer-facing integration guide. Keep in sync when changing the public surface of the plugin (especially `ios.appShortcuts[]`, `ios.enums[]`, `ios.entities[]`, parameter type vocabulary, phrase rules).
+- **`runbook/integrate-app-shortcut.md`** — developer-facing integration guide for the core AppShortcut flow. Keep in sync when changing the public surface of the plugin (especially `ios.appShortcuts[]`, `ios.enums[]`, `ios.entities[]`, parameter type vocabulary, phrase rules).
+- **`runbook/compose-with-expo-widgets.md`** — integration runbook for the expo-assistant + expo-widgets compose case. Update when the WidgetConfigurationIntent (#33) or ControlConfigurationIntent (#34) implementations land.
 - **`.plan/07-plugin-audit.md`** — the audit that established this structure. Gitignored, local-only. If you bring in a new pattern from a first-party plugin, add a note to the audit's decision log.
 - **Issue #42** — the audit tracking issue. Has the running list of follow-up issues (some already shipped via PR #46, others queued).
 
